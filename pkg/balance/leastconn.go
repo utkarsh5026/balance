@@ -16,8 +16,8 @@ func NewLeastConnBalancer(pool *node.Pool) *LeastConnBalancer {
 	}
 }
 
-func (l *LeastConnBalancer) Name() string {
-	return "Least Connections"
+func (l *LeastConnBalancer) Name() LoadBalancerType {
+	return LeastConnections
 }
 
 func (l *LeastConnBalancer) Select() (*node.Node, error) {

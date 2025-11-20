@@ -17,8 +17,8 @@ func NewWeightedRoundRobinBalancer(pool *node.Pool) *WeightedRoundRobinBalancer 
 	}
 }
 
-func (b *WeightedRoundRobinBalancer) Name() string {
-	return "WeightedRoundRobin"
+func (b *WeightedRoundRobinBalancer) Name() LoadBalancerType {
+	return WeightedRoundRobin
 }
 
 func (b *WeightedRoundRobinBalancer) Select() (*node.Node, error) {
