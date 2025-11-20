@@ -8,3 +8,11 @@ func checkHealthy(healthy []*node.Node) error {
 	}
 	return nil
 }
+
+func properWeight(n *node.Node) int {
+	weight := n.Weight()
+	if weight <= 0 {
+		weight = 1
+	}
+	return weight
+}
