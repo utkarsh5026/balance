@@ -13,9 +13,10 @@ var (
 type LoadBalancerType string
 
 const (
-	RoundRobin         LoadBalancerType = "RoundRobin"
-	WeightedRoundRobin LoadBalancerType = "WeightedRoundRobin"
-	LeastConnections   LoadBalancerType = "LeastConnections"
+	RoundRobin               LoadBalancerType = "RoundRobin"
+	WeightedRoundRobin       LoadBalancerType = "WeightedRoundRobin"
+	LeastConnections         LoadBalancerType = "LeastConnections"
+	LeastConnectionsWeighted LoadBalancerType = "LeastConnectionsWeighted"
 )
 
 type LoadBalancer interface {
