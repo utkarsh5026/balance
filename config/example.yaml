@@ -25,11 +25,19 @@ nodes:
 
 # Load balancer configuration
 load_balancer:
-  # Algorithm: "round-robin", "least-connections", "consistent-hash", "weighted-round-robin"
+  # Algorithm options:
+  # - "round-robin"                 : Simple round-robin (fastest, ~130 ns/op)
+  # - "weighted-round-robin"        : Weighted round-robin with smooth distribution
+  # - "least-connections"           : Select backend with fewest active connections (~130 ns/op)
+  # - "least-connections-weighted"  : Weighted least connections (best performance, ~125 ns/op)
+  # - "consistent-hash"             : Hash-based routing for session persistence (~400 ns/op)
+  # - "bounded-consistent-hash"     : Consistent hash with load balancing (~470 ns/op)
+  # - "session-affinity"            : Sticky sessions based on client IP
   algorithm: round-robin
 
-  # Hash key for consistent hashing (only used if algorithm is "consistent-hash")
+  # Hash key for consistent hashing (only used with consistent-hash algorithms)
   # Options: "source-ip", "header:X-User-ID", etc.
+  # Default: "source-ip"
   # hash_key: source-ip
 
 # TLS configuration (optional)
