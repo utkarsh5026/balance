@@ -3,6 +3,7 @@ package conf
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"go.yaml.in/yaml/v2"
 )
@@ -33,7 +34,7 @@ type Config struct {
 	Metrics MetricsConfig `yaml:"metrics"`
 }
 
-func Load(path string) (*Config, error) {
+func Load(path string, fillWithDefault bool) (*Config, error) {
 	data, error := os.ReadFile(path)
 	if error != nil {
 		return nil, error
@@ -42,6 +43,11 @@ func Load(path string) (*Config, error) {
 	var config Config
 	if error := yaml.Unmarshal(data, &config); error != nil {
 		return nil, error
+	}
+
+	err := config.Validate()
+	if err != nil && fillWithDefault {
+		config.setDefaults()
 	}
 
 	return &config, nil
@@ -87,4 +93,54 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) setDefaults() {
+	if c.Mode == "" {
+		c.Mode = "tcp"
+	}
+
+	if c.LoadBalancer.Algorithm == "" {
+		c.LoadBalancer.Algorithm = "round-robin"
+	}
+
+	for i := range c.Nodes {
+		if c.Nodes[i].Weight == 0 {
+			c.Nodes[i].Weight = 1
+		}
+	}
+
+	if c.Timeouts.Connect == 0 {
+		c.Timeouts.Connect = 5 * time.Second
+	}
+
+	if c.Timeouts.Read == 0 {
+		c.Timeouts.Read = 30 * time.Second
+	}
+
+	if c.Timeouts.Write == 0 {
+		c.Timeouts.Write = 30 * time.Second
+	}
+
+	if c.Timeouts.Idle == 0 {
+		c.Timeouts.Idle = 90 * time.Second
+	}
+
+	if c.HealthCheck != nil && c.HealthCheck.Enabled {
+		if c.HealthCheck.Interval == 0 {
+			c.HealthCheck.Interval = 10 * time.Second
+		}
+
+		if c.HealthCheck.Timeout == 0 {
+			c.HealthCheck.Timeout = 2 * time.Second
+		}
+
+		if c.HealthCheck.UnhealthyThreshold == 0 {
+			c.HealthCheck.UnhealthyThreshold = 3
+		}
+
+		if c.HealthCheck.HealthyThreshold == 0 {
+			c.HealthCheck.HealthyThreshold = 2
+		}
+	}
 }
