@@ -1,0 +1,90 @@
+package conf
+
+import "time"
+
+// MetricsConfig represents metrics configuration
+type MetricsConfig struct {
+	// Enabled enables Prometheus metrics
+	Enabled bool `yaml:"enabled"`
+
+	// Listen address for metrics endpoint (e.g., ":9090")
+	Listen string `yaml:"listen"`
+
+	// Path for metrics endpoint (default: "/metrics")
+	Path string `yaml:"path"`
+}
+
+// TimeoutConfig represents timeout settings
+type TimeoutConfig struct {
+	// Connect timeout for connecting to backends
+	Connect time.Duration `yaml:"connect"`
+
+	// Read timeout for reading from connections
+	Read time.Duration `yaml:"read"`
+
+	// Write timeout for writing to connections
+	Write time.Duration `yaml:"write"`
+
+	// Idle timeout for idle connections
+	Idle time.Duration `yaml:"idle"`
+}
+
+// HealthCheckConfig represents health check settings
+type HealthCheckConfig struct {
+	// Enabled enables health checking
+	Enabled bool `yaml:"enabled"`
+
+	// Interval between health checks
+	Interval time.Duration `yaml:"interval"`
+
+	// Timeout for health check requests
+	Timeout time.Duration `yaml:"timeout"`
+
+	// UnhealthyThreshold number of failures before marking unhealthy
+	UnhealthyThreshold int `yaml:"unhealthy_threshold"`
+
+	// HealthyThreshold number of successes before marking healthy
+	HealthyThreshold int `yaml:"healthy_threshold"`
+
+	// Path for HTTP health checks (e.g., "/health")
+	Path string `yaml:"path,omitempty"`
+}
+
+// TLSConfig represents TLS/SSL configuration
+type TLSConfig struct {
+	// Enabled enables TLS termination
+	Enabled bool `yaml:"enabled"`
+
+	// CertFile path to certificate file
+	CertFile string `yaml:"cert_file"`
+
+	// KeyFile path to private key file
+	KeyFile string `yaml:"key_file"`
+
+	// MinVersion minimum TLS version (e.g., "1.2", "1.3")
+	MinVersion string `yaml:"min_version"`
+}
+
+// LoadBalancerConfig represents load balancer settings
+type LoadBalancerConfig struct {
+	// Algorithm: "round-robin", "least-connections", "consistent-hash", "weighted-round-robin"
+	Algorithm string `yaml:"algorithm"`
+
+	// HashKey for consistent hashing (e.g., "source-ip", "header:X-User-ID")
+	HashKey string `yaml:"hash_key,omitempty"`
+}
+
+// Node represents a backend server configuration
+type Node struct {
+	// Name of the backend
+	Name string `yaml:"name"`
+
+	// Address of the backend (host:port)
+	Address string `yaml:"address"`
+
+	// Weight for weighted load balancing (default: 1)
+	Weight int `yaml:"weight"`
+
+	// MaxConnections limits concurrent connections to this backend (0 = unlimited)
+	MaxConnections int `yaml:"max_connections"`
+}
