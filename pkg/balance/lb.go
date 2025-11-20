@@ -18,6 +18,7 @@ const (
 	LeastConnections         LoadBalancerType = "LeastConnections"
 	LeastConnectionsWeighted LoadBalancerType = "LeastConnectionsWeighted"
 	SessionAffinity          LoadBalancerType = "SessionAffinity"
+	ConsistentHash           LoadBalancerType = "ConsistentHash"
 )
 
 type LoadBalancer interface {

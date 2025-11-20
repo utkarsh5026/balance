@@ -14,6 +14,7 @@ import (
 const (
 	defaultVirtualNodes = 200
 	defaultHashKey      = "default-hash-key"
+	defaultLoadFactor   = 1.25
 )
 
 type ConsistentHashBalancer struct {
@@ -135,4 +136,91 @@ func (c *ConsistentHashBalancer) hash(key string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return h.Sum32()
+}
+
+type BoundedConsistentHashBalancer struct {
+	*ConsistentHashBalancer
+	loadFactor float64
+}
+
+func NewBoundedConsistentHashBalancer(pool *node.Pool, virtualNodes int, hashKey string, loadFactor float64) *BoundedConsistentHashBalancer {
+	if loadFactor <= 0 {
+		loadFactor = defaultLoadFactor
+	}
+
+	return &BoundedConsistentHashBalancer{
+		ConsistentHashBalancer: NewConsistentHashBalancer(pool, virtualNodes, hashKey),
+		loadFactor:             loadFactor,
+	}
+}
+
+func (c *BoundedConsistentHashBalancer) SelectWithKey(key string) (*node.Node, error) {
+	c.syncRingIfNeeded()
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if len(c.ring) == 0 {
+		return nil, ErrNoNodeHealthy
+	}
+
+	backends := c.pool.Healthy()
+	if len(backends) == 0 {
+		return nil, ErrNoNodeHealthy
+	}
+
+	totalConnections := int64(0)
+	for _, n := range backends {
+		totalConnections += n.ActiveConnections()
+	}
+
+	avgLoad := float64(totalConnections) / float64(len(backends))
+	maxLoad := avgLoad * c.loadFactor
+
+	hash := c.hash(key)
+	n := c.findMinLoaded(hash, maxLoad)
+	if n != nil {
+		return n, nil
+	}
+
+	return c.findLeastLoaded(backends), nil
+}
+
+func (c *BoundedConsistentHashBalancer) findMinLoaded(hash uint32, maxLoad float64) *node.Node {
+	idx := sort.Search(len(c.ring), func(i int) bool {
+		return c.ring[i] >= hash
+	})
+
+	startIdx := idx
+	for i := 0; i < len(c.ring); i++ {
+		if idx >= len(c.ring) {
+			idx = 0
+		}
+
+		n := c.ringMap[c.ring[idx]]
+		if n != nil && float64(n.ActiveConnections()) <= maxLoad {
+			return n
+		}
+
+		idx++
+
+		if i > 0 && idx == startIdx {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (c *BoundedConsistentHashBalancer) findLeastLoaded(nodes []*node.Node) *node.Node {
+	var selected *node.Node
+	minConnections := int64(-1)
+	for _, n := range nodes {
+		active := n.ActiveConnections()
+		if minConnections == -1 || active < minConnections {
+			minConnections = active
+			selected = n
+		}
+	}
+	return selected
 }

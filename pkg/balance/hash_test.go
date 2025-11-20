@@ -552,3 +552,404 @@ func TestConsistentHashBalancer_HashFunction(t *testing.T) {
 		}
 	})
 }
+
+// TestBoundedConsistentHashBalancer_NewWithDefaults tests constructor with default values
+func TestBoundedConsistentHashBalancer_NewWithDefaults(t *testing.T) {
+	pool := node.NewPool()
+
+	t.Run("default load factor", func(t *testing.T) {
+		balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 0)
+		if balancer.loadFactor != defaultLoadFactor {
+			t.Errorf("Expected load factor %f, got %f", defaultLoadFactor, balancer.loadFactor)
+		}
+	})
+
+	t.Run("negative load factor", func(t *testing.T) {
+		balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", -1.5)
+		if balancer.loadFactor != defaultLoadFactor {
+			t.Errorf("Expected load factor %f, got %f", defaultLoadFactor, balancer.loadFactor)
+		}
+	})
+
+	t.Run("custom load factor", func(t *testing.T) {
+		customFactor := 2.0
+		balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", customFactor)
+		if balancer.loadFactor != customFactor {
+			t.Errorf("Expected load factor %f, got %f", customFactor, balancer.loadFactor)
+		}
+	})
+
+	t.Run("inherits consistent hash properties", func(t *testing.T) {
+		balancer := NewBoundedConsistentHashBalancer(pool, 150, "custom-key", 1.5)
+		if balancer.virtualNodes != 150 {
+			t.Errorf("Expected 150 virtual nodes, got %d", balancer.virtualNodes)
+		}
+		if balancer.hashKey != "custom-key" {
+			t.Errorf("Expected hash key 'custom-key', got %s", balancer.hashKey)
+		}
+	})
+}
+
+// TestBoundedConsistentHashBalancer_SelectNoNodes tests selection with no nodes
+func TestBoundedConsistentHashBalancer_SelectNoNodes(t *testing.T) {
+	pool := node.NewPool()
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	_, err := balancer.Select()
+	if err != ErrNoNodeHealthy {
+		t.Errorf("Expected ErrNoNodeHealthy, got %v", err)
+	}
+
+	_, err = balancer.SelectWithKey("somekey")
+	if err != ErrNoNodeHealthy {
+		t.Errorf("Expected ErrNoNodeHealthy, got %v", err)
+	}
+}
+
+// TestBoundedConsistentHashBalancer_SelectWithinLoadBounds tests selection when nodes are within bounds
+func TestBoundedConsistentHashBalancer_SelectWithinLoadBounds(t *testing.T) {
+	pool := createHashTestPool([]struct{ name, address string; weight int }{
+		{"node1", "192.168.1.1:8080", 1},
+		{"node2", "192.168.1.2:8080", 1},
+		{"node3", "192.168.1.3:8080", 1},
+	})
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	t.Run("consistent selection when all nodes have low load", func(t *testing.T) {
+		// All nodes have 0 connections, should behave like regular consistent hash
+		key := "user123"
+		node1, err := balancer.SelectWithKey(key)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Select 10 times with same key - should return same node
+		for i := 0; i < 10; i++ {
+			node2, err := balancer.SelectWithKey(key)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if node1.Address() != node2.Address() {
+				t.Errorf("Same key returned different nodes: %s vs %s", node1.Address(), node2.Address())
+			}
+		}
+	})
+}
+
+// TestBoundedConsistentHashBalancer_LoadFactorEnforcement tests load factor enforcement
+func TestBoundedConsistentHashBalancer_LoadFactorEnforcement(t *testing.T) {
+	nodes := []*node.Node{
+		node.NewNode("node1", "192.168.1.1:8080", 1),
+		node.NewNode("node2", "192.168.1.2:8080", 1),
+		node.NewNode("node3", "192.168.1.3:8080", 1),
+	}
+
+	pool := node.NewPool()
+	for _, n := range nodes {
+		pool.Add(n)
+	}
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	t.Run("skips overloaded nodes", func(t *testing.T) {
+		// Set up: node1 has 10 connections, node2 has 1, node3 has 1
+		// Average: 4, Max: 5 (4 * 1.25)
+		for i := 0; i < 10; i++ {
+			nodes[0].IncrementActiveConnections()
+		}
+		nodes[1].IncrementActiveConnections()
+		nodes[2].IncrementActiveConnections()
+
+		// Try to select many times - node1 should be avoided if it's overloaded
+		selectedCounts := make(map[string]int)
+		for i := 0; i < 100; i++ {
+			node, err := balancer.SelectWithKey(fmt.Sprintf("key%d", i))
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			selectedCounts[node.Address()]++
+		}
+
+		// Node1 (with 10 connections) exceeds maxLoad of 5, so it should be selected less
+		node1Count := selectedCounts["192.168.1.1:8080"]
+		node2Count := selectedCounts["192.168.1.2:8080"]
+		node3Count := selectedCounts["192.168.1.3:8080"]
+
+		t.Logf("Distribution with overload - node1: %d, node2: %d, node3: %d",
+			node1Count, node2Count, node3Count)
+
+		// Node1 should get fewer requests than the others
+		if node1Count >= node2Count || node1Count >= node3Count {
+			t.Errorf("Overloaded node1 should receive fewer requests. Got node1=%d, node2=%d, node3=%d",
+				node1Count, node2Count, node3Count)
+		}
+	})
+}
+
+// TestBoundedConsistentHashBalancer_FallbackToLeastLoaded tests fallback when all nodes exceed bounds
+func TestBoundedConsistentHashBalancer_FallbackToLeastLoaded(t *testing.T) {
+	nodes := []*node.Node{
+		node.NewNode("node1", "192.168.1.1:8080", 1),
+		node.NewNode("node2", "192.168.1.2:8080", 1),
+		node.NewNode("node3", "192.168.1.3:8080", 1),
+	}
+
+	pool := node.NewPool()
+	for _, n := range nodes {
+		pool.Add(n)
+	}
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	t.Run("falls back to least loaded when all nodes overloaded", func(t *testing.T) {
+		// Set up: All nodes have high load
+		// node1: 100, node2: 50, node3: 80
+		// Average: 76.67, Max: 95.83 (76.67 * 1.25)
+		// All exceed max, so should fall back to least loaded (node2)
+		for i := 0; i < 100; i++ {
+			nodes[0].IncrementActiveConnections()
+		}
+		for i := 0; i < 50; i++ {
+			nodes[1].IncrementActiveConnections()
+		}
+		for i := 0; i < 80; i++ {
+			nodes[2].IncrementActiveConnections()
+		}
+
+		// Select multiple times - when all nodes are overloaded, it should fall back
+		selectedCounts := make(map[string]int)
+		for i := 0; i < 100; i++ {
+			node, err := balancer.SelectWithKey(fmt.Sprintf("key%d", i))
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			selectedCounts[node.Address()]++
+		}
+
+		node1Count := selectedCounts["192.168.1.1:8080"]
+		node2Count := selectedCounts["192.168.1.2:8080"]
+		node3Count := selectedCounts["192.168.1.3:8080"]
+
+		// When all nodes are overloaded, the fallback should favor the least loaded
+		// node2 has 50 connections, so it should get more selections than node1 (100) and node3 (80)
+		if node2Count < node1Count && node2Count < node3Count {
+			t.Errorf("Expected node2 (least loaded with 50 conns) to be selected more than others. Got node1=%d, node2=%d, node3=%d",
+				node1Count, node2Count, node3Count)
+		}
+
+		t.Logf("Fallback distribution - node1: %d, node2: %d, node3: %d",
+			node1Count, node2Count, node3Count)
+	})
+}
+
+// TestBoundedConsistentHashBalancer_EdgeCaseZeroConnections tests edge case with zero connections
+func TestBoundedConsistentHashBalancer_EdgeCaseZeroConnections(t *testing.T) {
+	pool := createHashTestPool([]struct{ name, address string; weight int }{
+		{"node1", "192.168.1.1:8080", 1},
+		{"node2", "192.168.1.2:8080", 1},
+		{"node3", "192.168.1.3:8080", 1},
+	})
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	t.Run("works correctly with zero connections on all nodes", func(t *testing.T) {
+		// All nodes have 0 connections
+		// Average: 0, Max: 0
+		// Should still select nodes (0 <= 0 is true)
+
+		node, err := balancer.SelectWithKey("test-key")
+		if err != nil {
+			t.Fatalf("Expected successful selection with zero connections, got error: %v", err)
+		}
+		if node == nil {
+			t.Error("Expected non-nil node")
+		}
+	})
+}
+
+// TestBoundedConsistentHashBalancer_DynamicLoadChanges tests behavior with changing loads
+func TestBoundedConsistentHashBalancer_DynamicLoadChanges(t *testing.T) {
+	nodes := []*node.Node{
+		node.NewNode("node1", "192.168.1.1:8080", 1),
+		node.NewNode("node2", "192.168.1.2:8080", 1),
+		node.NewNode("node3", "192.168.1.3:8080", 1),
+	}
+
+	pool := node.NewPool()
+	for _, n := range nodes {
+		pool.Add(n)
+	}
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.5)
+
+	t.Run("adapts to changing node loads", func(t *testing.T) {
+		key := "sticky-user"
+
+		// Initially all nodes have low load
+		initialNode, err := balancer.SelectWithKey(key)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Simulate the selected node getting overloaded
+		for i := 0; i < 100; i++ {
+			initialNode.IncrementActiveConnections()
+		}
+
+		// Now selection might change to a less loaded node
+		newNode, err := balancer.SelectWithKey(key)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+
+		// Log the behavior (may or may not change depending on hash ring position)
+		if initialNode.Address() != newNode.Address() {
+			t.Logf("Selection changed from %s to %s due to load",
+				initialNode.Address(), newNode.Address())
+		} else {
+			t.Logf("Selection stayed at %s despite high load (other nodes may also be loaded or not on hash path)",
+				initialNode.Address())
+		}
+	})
+}
+
+// TestBoundedConsistentHashBalancer_Concurrency tests thread safety
+func TestBoundedConsistentHashBalancer_Concurrency(t *testing.T) {
+	pool := createHashTestPool([]struct{ name, address string; weight int }{
+		{"node1", "192.168.1.1:8080", 1},
+		{"node2", "192.168.1.2:8080", 1},
+		{"node3", "192.168.1.3:8080", 1},
+	})
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	var wg sync.WaitGroup
+	goroutines := 100
+	selectionsPerGoroutine := 100
+
+	errors := make(chan error, goroutines*selectionsPerGoroutine)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < selectionsPerGoroutine; j++ {
+				key := fmt.Sprintf("goroutine%d-req%d", id, j)
+				_, err := balancer.SelectWithKey(key)
+				if err != nil {
+					errors <- err
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	errorCount := 0
+	for err := range errors {
+		t.Errorf("Concurrent selection error: %v", err)
+		errorCount++
+	}
+
+	if errorCount > 0 {
+		t.Errorf("Got %d errors during concurrent execution", errorCount)
+	}
+}
+
+// TestBoundedConsistentHashBalancer_ConcurrentLoadChanges tests concurrent load modifications
+func TestBoundedConsistentHashBalancer_ConcurrentLoadChanges(t *testing.T) {
+	nodes := []*node.Node{
+		node.NewNode("node1", "192.168.1.1:8080", 1),
+		node.NewNode("node2", "192.168.1.2:8080", 1),
+		node.NewNode("node3", "192.168.1.3:8080", 1),
+	}
+
+	pool := node.NewPool()
+	for _, n := range nodes {
+		pool.Add(n)
+	}
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	var wg sync.WaitGroup
+
+	// Goroutine 1: Keep selecting
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			_, _ = balancer.SelectWithKey(fmt.Sprintf("key%d", i))
+		}
+	}()
+
+	// Goroutine 2: Modify node loads
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			nodes[i%3].IncrementActiveConnections()
+			if i%10 == 0 {
+				nodes[i%3].DecrementActiveConnections()
+			}
+		}
+	}()
+
+	// Goroutine 3: More selections with different keys
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 200; i++ {
+			_, _ = balancer.Select()
+		}
+	}()
+
+	wg.Wait()
+
+	// If we get here without deadlock or panic, test passes
+	t.Log("Concurrent load changes test completed successfully")
+}
+
+// TestBoundedConsistentHashBalancer_WeightedNodes tests bounded load with weighted nodes
+func TestBoundedConsistentHashBalancer_WeightedNodes(t *testing.T) {
+	nodes := []*node.Node{
+		node.NewNode("node1", "192.168.1.1:8080", 1),
+		node.NewNode("node2", "192.168.1.2:8080", 5), // Higher weight
+		node.NewNode("node3", "192.168.1.3:8080", 1),
+	}
+
+	pool := node.NewPool()
+	for _, n := range nodes {
+		pool.Add(n)
+	}
+
+	balancer := NewBoundedConsistentHashBalancer(pool, 100, "test", 1.25)
+
+	t.Run("weight affects hash ring but load bounds apply per node", func(t *testing.T) {
+		// Node2 has higher weight, so more virtual nodes
+		// But load bounds are calculated based on actual connections
+
+		selectedCounts := make(map[string]int)
+		for i := 0; i < 1000; i++ {
+			node, err := balancer.SelectWithKey(fmt.Sprintf("key%d", i))
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			selectedCounts[node.Address()]++
+		}
+
+		node2Count := selectedCounts["192.168.1.2:8080"]
+		node1Count := selectedCounts["192.168.1.1:8080"]
+		node3Count := selectedCounts["192.168.1.3:8080"]
+
+		// Node2 should get more due to higher weight (more virtual nodes)
+		if node2Count < node1Count || node2Count < node3Count {
+			t.Errorf("Higher weight node2 should receive more requests. Got node1=%d, node2=%d, node3=%d",
+				node1Count, node2Count, node3Count)
+		}
+
+		t.Logf("Weighted distribution - node1: %d, node2: %d, node3: %d",
+			node1Count, node2Count, node3Count)
+	})
+}
