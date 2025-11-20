@@ -17,6 +17,7 @@ const (
 	WeightedRoundRobin       LoadBalancerType = "WeightedRoundRobin"
 	LeastConnections         LoadBalancerType = "LeastConnections"
 	LeastConnectionsWeighted LoadBalancerType = "LeastConnectionsWeighted"
+	SessionAffinity          LoadBalancerType = "SessionAffinity"
 )
 
 type LoadBalancer interface {

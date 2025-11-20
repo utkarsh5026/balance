@@ -13,7 +13,7 @@ type session struct {
 	lastAccess time.Time
 }
 
-type SessionAffinity struct {
+type SessionAfinityBalancer struct {
 	balancer      LoadBalancer
 	sessions      map[string]*session
 	mu            sync.RWMutex
@@ -22,12 +22,12 @@ type SessionAffinity struct {
 	stopCleanup   chan struct{}
 }
 
-func NewSessionAffinity(balancer LoadBalancer, timeout time.Duration) (*SessionAffinity, error) {
+func NewSessionAffinity(balancer LoadBalancer, timeout time.Duration) (*SessionAfinityBalancer, error) {
 	if timeout <= 0 {
 		return nil, fmt.Errorf("timeout must be greater than zero")
 	}
 
-	sa := &SessionAffinity{
+	sa := &SessionAfinityBalancer{
 		balancer:    balancer,
 		sessions:    make(map[string]*session),
 		timeout:     timeout,
@@ -39,7 +39,7 @@ func NewSessionAffinity(balancer LoadBalancer, timeout time.Duration) (*SessionA
 	return sa, nil
 }
 
-func (sa *SessionAffinity) SelectWithClientIP(clientIP string) (*node.Node, error) {
+func (sa *SessionAfinityBalancer) SelectWithClientIP(clientIP string) (*node.Node, error) {
 	sa.mu.RLock()
 	if sess, exists := sa.sessions[clientIP]; exists {
 		if time.Since(sess.lastAccess) < sa.timeout && sess.node.IsHealthy() {
@@ -70,11 +70,15 @@ func (sa *SessionAffinity) SelectWithClientIP(clientIP string) (*node.Node, erro
 	return node, nil
 }
 
-func (sa *SessionAffinity) Select() (*node.Node, error) {
+func (sa *SessionAfinityBalancer) Select() (*node.Node, error) {
 	return sa.balancer.Select()
 }
 
-func (sa *SessionAffinity) cleanupLoop() {
+func (sa *SessionAfinityBalancer) Name() LoadBalancerType {
+	return SessionAffinity
+}
+
+func (sa *SessionAfinityBalancer) cleanupLoop() {
 	for {
 		select {
 		case <-sa.cleanupTicker.C:
@@ -86,7 +90,7 @@ func (sa *SessionAffinity) cleanupLoop() {
 	}
 }
 
-func (sa *SessionAffinity) cleaup() {
+func (sa *SessionAfinityBalancer) cleaup() {
 	sa.mu.Lock()
 	defer sa.mu.Unlock()
 
@@ -99,12 +103,12 @@ func (sa *SessionAffinity) cleaup() {
 }
 
 // ClearSession removes a specific client's session
-func (sa *SessionAffinity) ClearSession(clientIP string) {
+func (sa *SessionAfinityBalancer) ClearSession(clientIP string) {
 	sa.mu.Lock()
 	defer sa.mu.Unlock()
 	delete(sa.sessions, clientIP)
 }
 
-func (sa *SessionAffinity) Stop() {
+func (sa *SessionAfinityBalancer) Stop() {
 	close(sa.stopCleanup)
 }
