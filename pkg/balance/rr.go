@@ -1,6 +1,8 @@
 package balance
 
 import (
+	"slices"
+	"sync"
 	"sync/atomic"
 
 	"github.com/utkarsh5026/balance/pkg/node"
@@ -32,14 +34,26 @@ func (r *RoundRobinBalancer) Select() (*node.Node, error) {
 	return selected, nil
 }
 
+// WeightedRoundRobinBalancer implements smooth weighted round-robin algorithm
+// as used in NGINX. This provides better distribution than simple weighted round-robin.
+//
+// Algorithm:
+//  1. On each selection, increase current_weight of each node by its weight
+//  2. Select the node with the maximum current_weight
+//  3. Reduce the selected node's current_weight by the total weight
+//
+// This ensures smooth distribution. For example, with weights {5, 1, 1}:
+// Sequence: a,a,b,a,c,a,a (not a,a,a,a,a,b,c)
 type WeightedRoundRobinBalancer struct {
-	pool    *node.Pool
-	current atomic.Uint64
+	pool          *node.Pool
+	mu            sync.Mutex
+	currentWeight map[*node.Node]int
 }
 
 func NewWeightedRoundRobinBalancer(pool *node.Pool) *WeightedRoundRobinBalancer {
 	return &WeightedRoundRobinBalancer{
-		pool: pool,
+		pool:          pool,
+		currentWeight: make(map[*node.Node]int),
 	}
 }
 
@@ -48,6 +62,9 @@ func (b *WeightedRoundRobinBalancer) Name() LoadBalancerType {
 }
 
 func (b *WeightedRoundRobinBalancer) Select() (*node.Node, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	healthy := b.pool.Healthy()
 	if err := checkHealthy(healthy); err != nil {
 		return nil, err
@@ -59,24 +76,44 @@ func (b *WeightedRoundRobinBalancer) Select() (*node.Node, error) {
 
 	var totalWeight int
 	for _, n := range healthy {
-		totalWeight += n.Weight()
+		weight := n.Weight()
+		if weight <= 0 {
+			weight = 1
+		}
+		totalWeight += weight
 	}
 
 	if totalWeight <= 0 {
-		next := b.current.Add(1)
-		selected := healthy[int(next)%len(healthy)]
-		return selected, nil
+		totalWeight = len(healthy)
 	}
 
-	next := b.current.Add(1)
-	weightIndex := int(next % uint64(totalWeight))
+	var selected *node.Node
+	maxWeight := -1
 
 	for _, n := range healthy {
-		weightIndex -= n.Weight()
-		if weightIndex < 0 {
-			return n, nil
+		weight := n.Weight()
+		if weight <= 0 {
+			weight = 1
+		}
+
+		b.currentWeight[n] += weight
+		if b.currentWeight[n] > maxWeight {
+			maxWeight = b.currentWeight[n]
+			selected = n
 		}
 	}
 
-	return healthy[0], nil
+	if selected == nil {
+		return healthy[0], nil
+	}
+
+	b.currentWeight[selected] -= totalWeight
+
+	for n := range b.currentWeight {
+		if !slices.Contains(healthy, n) {
+			delete(b.currentWeight, n)
+		}
+	}
+
+	return selected, nil
 }
