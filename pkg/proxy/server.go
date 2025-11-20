@@ -23,6 +23,7 @@ type ProxyServer struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	conns  sync.Map
 
 	totalBytesRecieved atomic.Uint64
 	totalBytesSent     atomic.Uint64
@@ -89,6 +90,8 @@ func (s *ProxyServer) startAccepting() {
 }
 
 func (s *ProxyServer) handleConnection(clientConn net.Conn) {
+	s.conns.Store(clientConn, struct{}{})
+	defer s.conns.Delete(clientConn)
 	defer clientConn.Close()
 
 	s.totalConnections.Add(1)
@@ -164,9 +167,16 @@ func (s *ProxyServer) Shutdown() error {
 
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
-			slog.Error("Error closing listener: %v", err)
+			slog.Error("Error closing listener", "error", err)
 		}
 	}
+
+	s.conns.Range(func(key, value any) bool {
+		if conn, ok := key.(net.Conn); ok {
+			conn.Close()
+		}
+		return true
+	})
 
 	slog.Info("Final statistics:")
 	slog.Info("  Total connections", "count", s.totalConnections.Load())
