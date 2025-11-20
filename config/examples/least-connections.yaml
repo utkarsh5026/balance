@@ -1,0 +1,27 @@
+# Least Connections Load Balancer Example
+# Performance: ~130 ns/op (excellent for dynamic workloads)
+# Use Case: Distribute load to least busy backend
+# Best for: Varying request processing times
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: backend-1
+    address: "localhost:9001"
+    weight: 1
+  - name: backend-2
+    address: "localhost:9002"
+    weight: 1
+  - name: backend-3
+    address: "localhost:9003"
+    weight: 1
+
+load_balancer:
+  algorithm: least-connections
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s

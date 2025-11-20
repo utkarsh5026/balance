@@ -1,0 +1,27 @@
+# Weighted Round Robin Load Balancer Example
+# Performance: ~900 ns/op (smooth weighted distribution)
+# Use Case: Distribute traffic based on backend capacity/performance
+# Algorithm: NGINX-style smooth weighted round-robin
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: powerful-backend
+    address: "localhost:9001"
+    weight: 5  # Receives 5x more traffic
+  - name: medium-backend
+    address: "localhost:9002"
+    weight: 3  # Receives 3x more traffic
+  - name: small-backend
+    address: "localhost:9003"
+    weight: 1  # Baseline traffic
+
+load_balancer:
+  algorithm: weighted-round-robin
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s

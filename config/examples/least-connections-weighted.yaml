@@ -1,0 +1,30 @@
+# Weighted Least Connections Load Balancer Example
+# Performance: ~125 ns/op (BEST OVERALL PERFORMANCE!)
+# Use Case: Intelligent load distribution considering both capacity and current load
+# Best for: Production environments with varying backend capacities
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: high-capacity-backend
+    address: "localhost:9001"
+    weight: 5  # Can handle 5x more connections
+    max_connections: 5000
+  - name: medium-capacity-backend
+    address: "localhost:9002"
+    weight: 3  # Can handle 3x more connections
+    max_connections: 3000
+  - name: low-capacity-backend
+    address: "localhost:9003"
+    weight: 1  # Baseline capacity
+    max_connections: 1000
+
+load_balancer:
+  algorithm: least-connections-weighted
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s

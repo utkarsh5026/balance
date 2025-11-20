@@ -1,0 +1,29 @@
+# Consistent Hash Load Balancer Example
+# Performance: ~400 ns/op (good for session persistence)
+# Use Case: Route requests from the same client to the same backend
+# Best for: Stateful applications, caching layers
+# Algorithm: Uses virtual nodes (200) on a hash ring
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: cache-backend-1
+    address: "localhost:9001"
+    weight: 1  # Weight affects number of virtual nodes
+  - name: cache-backend-2
+    address: "localhost:9002"
+    weight: 1
+  - name: cache-backend-3
+    address: "localhost:9003"
+    weight: 2  # Gets more virtual nodes on the ring
+
+load_balancer:
+  algorithm: consistent-hash
+  hash_key: source-ip  # Route based on client IP
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s

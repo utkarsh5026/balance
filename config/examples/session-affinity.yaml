@@ -1,0 +1,32 @@
+# Session Affinity Load Balancer Example
+# Performance: ~78 ns/op for cached sessions (FASTEST for sticky sessions!)
+# Performance: ~520 ns/op for new sessions
+# Use Case: Sticky sessions based on client IP
+# Best for: Stateful applications requiring session persistence
+# Session Timeout: 5 minutes (default)
+# Underlying Algorithm: Round-robin (for new sessions)
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: stateful-backend-1
+    address: "localhost:9001"
+    weight: 1
+  - name: stateful-backend-2
+    address: "localhost:9002"
+    weight: 1
+  - name: stateful-backend-3
+    address: "localhost:9003"
+    weight: 1
+
+load_balancer:
+  algorithm: session-affinity
+  # Note: Session affinity uses round-robin for selecting initial backend
+  # Sessions are maintained in memory and cleaned up after 5 minutes
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s

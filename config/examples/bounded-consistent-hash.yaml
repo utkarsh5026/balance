@@ -1,0 +1,30 @@
+# Bounded Consistent Hash Load Balancer Example
+# Performance: ~470 ns/op (session persistence + load balancing)
+# Use Case: Consistent hashing with automatic load balancing
+# Best for: Prevents hotspots while maintaining session affinity
+# Algorithm: Falls back to least-loaded backend if primary is overloaded
+# Load Factor: 1.25 (max 25% above average load)
+
+mode: tcp
+listen: ":8080"
+
+nodes:
+  - name: cache-backend-1
+    address: "localhost:9001"
+    weight: 1
+  - name: cache-backend-2
+    address: "localhost:9002"
+    weight: 1
+  - name: cache-backend-3
+    address: "localhost:9003"
+    weight: 1
+
+load_balancer:
+  algorithm: bounded-consistent-hash
+  hash_key: source-ip  # Route based on client IP
+
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s
