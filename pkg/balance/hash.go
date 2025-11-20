@@ -1,6 +1,7 @@
 package balance
 
 import (
+	"fmt"
 	"hash/fnv"
 	"sort"
 	"sync"
@@ -88,8 +89,8 @@ func (c *ConsistentHashBalancer) syncRing() {
 		weight := properWeight(n)
 		numVirtualNodes := c.virtualNodes * weight
 
-		for i := 0; i < numVirtualNodes; i++ {
-			virtualNodeKey := c.hashKey + n.Address() + string(i)
+		for i := range numVirtualNodes {
+			virtualNodeKey := fmt.Sprintf("%s%s%d", c.hashKey, n.Address(), i)
 			hash := c.hash(virtualNodeKey)
 			c.ring = append(c.ring, hash)
 			c.ringMap[hash] = n
