@@ -1,0 +1,62 @@
+# Balance Proxy - Example Configuration
+
+# Proxy mode: "tcp" or "http"
+mode: tcp
+
+# Listen address
+listen: ":8080"
+
+# Backend servers
+nodes:
+  - name: backend-1
+    address: "localhost:9001"
+    weight: 1
+    max_connections: 1000
+
+  - name: backend-2
+    address: "localhost:9002"
+    weight: 1
+    max_connections: 1000
+
+  - name: backend-3
+    address: "localhost:9003"
+    weight: 2 # This backend will receive 2x traffic (if using weighted algorithm)
+    max_connections: 2000
+
+# Load balancer configuration
+load_balancer:
+  # Algorithm: "round-robin", "least-connections", "consistent-hash", "weighted-round-robin"
+  algorithm: round-robin
+
+  # Hash key for consistent hashing (only used if algorithm is "consistent-hash")
+  # Options: "source-ip", "header:X-User-ID", etc.
+  # hash_key: source-ip
+
+# TLS configuration (optional)
+# tls:
+#   enabled: true
+#   cert_file: /path/to/cert.pem
+#   key_file: /path/to/key.pem
+#   min_version: "1.2"  # Minimum TLS version
+
+# Health check configuration (optional)
+# health_check:
+#   enabled: true
+#   interval: 10s
+#   timeout: 3s
+#   unhealthy_threshold: 3
+#   healthy_threshold: 2
+#   path: /health  # For HTTP mode only
+
+# Timeout configuration
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 60s
+
+# Metrics configuration
+metrics:
+  enabled: true
+  listen: ":9090"
+  path: /metrics
