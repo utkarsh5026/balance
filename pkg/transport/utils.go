@@ -15,6 +15,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// GenerateSelfSignedCertificate generates a self-signed certificate for the given domains.
+// It creates a new RSA 2048-bit private key and a certificate valid for 365 days.
+// The certificate is configured for server authentication and includes the provided domains as DNS names.
 func GenerateSelfSignedCertificate(domains []string) (*Certificate, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -67,6 +70,9 @@ func GenerateSelfSignedCertificate(domains []string) (*Certificate, error) {
 	}, nil
 }
 
+// SaveCertificateToPEM saves the provided certificate and private key to the specified files in PEM format.
+// It performs the file writing operations concurrently. If any error occurs during writing,
+// it attempts to remove any partially created files.
 func SaveCertificateToPEM(cert *Certificate, certFile, keyFile string) error {
 	var g errgroup.Group
 
@@ -87,6 +93,7 @@ func SaveCertificateToPEM(cert *Certificate, certFile, keyFile string) error {
 	return nil
 }
 
+// saveCertificate writes the certificate data to a file in PEM format.
 func saveCertificate(cert *Certificate, certFile string) error {
 	certOut, err := os.Create(certFile)
 	if err != nil {
@@ -106,6 +113,8 @@ func saveCertificate(cert *Certificate, certFile string) error {
 	return nil
 }
 
+// savePrimaryKey writes the RSA private key to a file in PEM format.
+// It expects the private key in the certificate to be of type *rsa.PrivateKey.
 func savePrimaryKey(cert *Certificate, keyfile string) error {
 	keyOut, err := os.Create(keyfile)
 	if err != nil {
