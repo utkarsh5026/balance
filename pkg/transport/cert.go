@@ -79,28 +79,52 @@ func (c *CertificateManager) LoadCertificate(certFile, keyFile string) (*Certifi
 	return cert, nil
 }
 
-func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
+func (c *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	serverName := hello.ServerName
 	if serverName == "" {
 
-		if cm.defaultCert != nil {
-			return &cm.defaultCert.TLSCert, nil
+		if c.defaultCert != nil {
+			return &c.defaultCert.TLSCert, nil
 		}
 		return nil, fmt.Errorf("no default certificate configured")
 	}
 
-	if cert, ok := cm.certificates[serverName]; ok {
+	if cert, ok := c.certificates[serverName]; ok {
 		return &cert.TLSCert, nil
 	}
 
-	if cm.defaultCert != nil {
-		return &cm.defaultCert.TLSCert, nil
+	if c.defaultCert != nil {
+		return &c.defaultCert.TLSCert, nil
 	}
 
 	return nil, fmt.Errorf("no certificate found for %s", serverName)
+}
+
+func (c *CertificateManager) RemoveCertificate(domain string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.certificates, domain)
+}
+
+func (c *CertificateManager) ListCertificates() []*Certificate {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	seen := make(map[*Certificate]bool)
+	certs := make([]*Certificate, 0)
+
+	for _, cert := range c.certificates {
+		if !seen[cert] {
+			certs = append(certs, cert)
+			seen[cert] = true
+		}
+	}
+
+	return certs
 }
 
 func (c *CertificateManager) AddCertificateFromFiles(certFile, keyFile string, setDefault bool) error {
