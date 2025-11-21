@@ -1,0 +1,123 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Performance Benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.x'
+        cache: true
+
+    - name: Run benchmarks
+      run: |
+        go test -bench=. -benchmem -benchtime=3s ./pkg/balance/ | tee benchmark_results.txt
+
+    - name: Store benchmark result
+      uses: benchmark-action/github-action-benchmark@v1
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      with:
+        tool: 'go'
+        output-file-path: benchmark_results.txt
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        alert-threshold: '150%'
+        comment-on-alert: true
+        fail-on-alert: false
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: benchmark_results.txt
+        retention-days: 30
+
+    - name: Comment benchmark results on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const results = fs.readFileSync('benchmark_results.txt', 'utf8');
+          const body = `## Benchmark Results\n\n\`\`\`\n${results}\n\`\`\``;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+  benchmark-comparison:
+    name: Compare with Base Branch
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.x'
+        cache: true
+
+    - name: Run benchmarks (PR)
+      run: |
+        go test -bench=. -benchmem -benchtime=3s ./pkg/balance/ > pr_bench.txt
+
+    - name: Checkout base branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.base_ref }}
+
+    - name: Run benchmarks (base)
+      run: |
+        go test -bench=. -benchmem -benchtime=3s ./pkg/balance/ > base_bench.txt
+
+    - name: Install benchstat
+      run: go install golang.org/x/perf/cmd/benchstat@latest
+
+    - name: Compare benchmarks
+      run: |
+        echo "## Benchmark Comparison" > comparison.txt
+        echo "" >> comparison.txt
+        echo "Comparing PR branch against ${{ github.base_ref }}" >> comparison.txt
+        echo "" >> comparison.txt
+        echo "\`\`\`" >> comparison.txt
+        benchstat base_bench.txt pr_bench.txt >> comparison.txt || echo "Comparison completed with differences" >> comparison.txt
+        echo "\`\`\`" >> comparison.txt
+
+    - name: Post comparison comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const comparison = fs.readFileSync('comparison.txt', 'utf8');
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comparison
+          });

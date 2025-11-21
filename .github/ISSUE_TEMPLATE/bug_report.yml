@@ -1,0 +1,165 @@
+name: Bug Report
+description: File a bug report to help us improve Balance
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Configure balance with '...'
+        2. Start the server '...'
+        3. Send request to '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+      placeholder: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened instead?
+      placeholder: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Please paste your configuration file (remove sensitive data)
+      render: yaml
+      placeholder: |
+        mode: http
+        listen: ":8080"
+        algorithm: round-robin
+        ...
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please paste relevant log output
+      render: shell
+      placeholder: Paste logs here
+
+  - type: input
+    id: version
+    attributes:
+      label: Balance Version
+      description: What version of Balance are you running?
+      placeholder: v1.0.0 or commit hash
+    validations:
+      required: true
+
+  - type: input
+    id: go-version
+    attributes:
+      label: Go Version
+      description: What version of Go are you using?
+      placeholder: go version output
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you using?
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other (please specify)
+    validations:
+      required: true
+
+  - type: textarea
+    id: os-details
+    attributes:
+      label: OS Details
+      description: OS version, distribution, etc.
+      placeholder: Ubuntu 22.04, Windows 11, macOS 14.0
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Proxy Mode
+      description: Which mode were you using?
+      options:
+        - TCP
+        - HTTP
+        - Both
+    validations:
+      required: true
+
+  - type: dropdown
+    id: algorithm
+    attributes:
+      label: Load Balancing Algorithm
+      description: Which algorithm were you using?
+      options:
+        - Round Robin
+        - Weighted Round Robin
+        - Least Connections
+        - Least Connections Weighted
+        - Consistent Hash
+        - Bounded Consistent Hash
+        - Session Affinity
+
+  - type: checkboxes
+    id: tls
+    attributes:
+      label: TLS Configuration
+      description: Are you using TLS?
+      options:
+        - label: TLS termination enabled
+        - label: Client authentication (mTLS) enabled
+        - label: SNI (multiple certificates) configured
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Network topology, load patterns, backend info, etc.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I have included all relevant information above
+          required: true
+        - label: I have tested with the latest version
+          required: false

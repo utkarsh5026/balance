@@ -1,0 +1,149 @@
+name: Feature Request
+description: Suggest an idea or enhancement for Balance
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in improving Balance!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: I'm frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: I would like Balance to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered
+      placeholder: I also considered...
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: What category does this feature fall into?
+      options:
+        - Load Balancing Algorithm
+        - Health Checking
+        - TLS/Security
+        - Configuration
+        - Performance
+        - Monitoring/Metrics
+        - Logging
+        - Documentation
+        - CLI/UX
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Critical (blocking my use case)
+        - High (significantly improves my workflow)
+        - Medium (nice to have)
+        - Low (minor improvement)
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Describe your specific use case for this feature
+      placeholder: |
+        I need this feature because...
+        My environment is...
+        My traffic pattern is...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example Configuration/Usage
+      description: If applicable, show how you envision using this feature
+      render: yaml
+      placeholder: |
+        mode: http
+        listen: ":8080"
+        new_feature:
+          enabled: true
+          option: value
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who would benefit from this feature?
+      placeholder: This would help users who...
+
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Breaking Changes
+      description: Would this feature require breaking changes?
+      options:
+        - label: This feature would require breaking changes to existing configurations
+        - label: This feature could be implemented without breaking changes
+
+  - type: textarea
+    id: resources
+    attributes:
+      label: Related Resources
+      description: Links to related issues, projects, or documentation
+      placeholder: |
+        - Similar feature in project X: https://...
+        - RFC/Spec: https://...
+        - Discussion: https://...
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Are you willing to contribute to this feature?
+      options:
+        - label: I am willing to submit a pull request for this feature
+        - label: I can help with testing
+        - label: I can help with documentation
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or examples about the feature request
+      placeholder: Additional information...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I have clearly described the problem and proposed solution
+          required: true
+        - label: This feature aligns with Balance's goals as a load balancer
+          required: true

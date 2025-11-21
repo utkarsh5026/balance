@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  # Maintain dependencies for Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    reviewers:
+      - "YOUR_USERNAME"  # Replace with actual GitHub username(s)
+    assignees:
+      - "YOUR_USERNAME"  # Replace with actual GitHub username(s)
+
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    reviewers:
+      - "YOUR_USERNAME"  # Replace with actual GitHub username(s)
+    assignees:
+      - "YOUR_USERNAME"  # Replace with actual GitHub username(s)
