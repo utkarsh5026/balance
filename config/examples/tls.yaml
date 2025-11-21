@@ -1,0 +1,64 @@
+# Basic TLS Configuration Example
+# This example shows a simple HTTPS load balancer with TLS termination
+
+mode: http
+listen: ":443"
+
+# TLS Configuration
+tls:
+  enabled: true
+
+  # Single certificate (backward compatible)
+  cert_file: "certs/example.com.crt"
+  key_file: "certs/example.com.key"
+
+  # TLS version settings
+  min_version: "1.2"
+  max_version: "1.3"
+
+  # Use secure defaults for cipher suites
+  prefer_server_cipher_suites: true
+  session_tickets_disabled: false
+
+  # ALPN protocols for HTTP/2 support
+  alpn_protocols:
+    - "h2"
+    - "http/1.1"
+
+# Backend servers
+backends:
+  - name: backend-1
+    address: "localhost:9001"
+    weight: 1
+
+  - name: backend-2
+    address: "localhost:9002"
+    weight: 1
+
+  - name: backend-3
+    address: "localhost:9003"
+    weight: 1
+
+# Load balancing
+load_balancer:
+  algorithm: "round-robin"
+
+# HTTP configuration
+http:
+  enable_websocket: true
+  enable_http2: true
+  max_idle_conns_per_host: 100
+  idle_conn_timeout: 90s
+
+# Timeouts
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 120s
+
+# Metrics
+metrics:
+  enabled: true
+  listen: ":9090"
+  path: "/metrics"
