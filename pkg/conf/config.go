@@ -35,6 +35,9 @@ type Config struct {
 
 	// Metrics configuration
 	Metrics MetricsConfig `yaml:"metrics"`
+
+	// Security configuration
+	Security *SecurityConfig `yaml:"security,omitempty"`
 }
 
 func Load(path string, fillWithDefault bool) (*Config, error) {
