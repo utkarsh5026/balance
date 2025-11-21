@@ -1,0 +1,45 @@
+# Test TLS Configuration
+# This configuration tests TLS termination with self-signed certificates
+
+mode: http
+listen: "localhost:8443"
+
+# TLS Configuration
+tls:
+  enabled: true
+
+  # Use test certificates
+  cert_file: "certs/test.crt"
+  key_file: "certs/test.key"
+
+  # TLS version settings
+  min_version: "1.2"
+  max_version: "1.3"
+
+  # Use secure defaults for cipher suites
+  prefer_server_cipher_suites: true
+  session_tickets_disabled: false
+
+# Backend servers - using httpbin.org as a test backend
+backends:
+  - name: httpbin
+    address: "httpbin.org:80"
+    weight: 1
+
+# Load balancing
+load_balancer:
+  algorithm: "round-robin"
+
+# HTTP configuration
+http:
+  enable_websocket: false
+  enable_http2: true
+  max_idle_conns_per_host: 100
+  idle_conn_timeout: 90s
+
+# Timeouts
+timeouts:
+  connect: 5s
+  read: 30s
+  write: 30s
+  idle: 120s
