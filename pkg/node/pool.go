@@ -69,6 +69,17 @@ func (p *Pool) HealthyCount() int {
 			count++
 		}
 	}
-
 	return count
+}
+
+func (p *Pool) GetByName(name string) *Node {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	for _, n := range p.nodes {
+		if n.Name() == name {
+			return n
+		}
+	}
+	return nil
 }
