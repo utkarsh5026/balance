@@ -86,12 +86,46 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid load balancer algorithm: %s", c.LoadBalancer.Algorithm)
 	}
 
+	if err := c.validateTLS(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) validateTLS() error {
 	if c.TLS != nil && c.TLS.Enabled {
-		if c.TLS.CertFile == "" {
-			return fmt.Errorf("TLS cert_file is required when TLS is enabled")
+		if len(c.TLS.Certificates) == 0 && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
+			return fmt.Errorf("TLS certificates or cert_file/key_file is required when TLS is enabled")
 		}
+
 		if c.TLS.KeyFile == "" {
 			return fmt.Errorf("TLS key_file is required when TLS is enabled")
+		}
+	}
+
+	validVersions := map[string]bool{"1.0": true, "1.1": true, "1.2": true, "1.3": true}
+
+	if c.TLS.MinVersion != "" {
+		if !validVersions[c.TLS.MinVersion] {
+			return fmt.Errorf("invalid TLS min_version: %s (must be 1.0, 1.1, 1.2, or 1.3)", c.TLS.MinVersion)
+		}
+	}
+
+	if c.TLS.MaxVersion != "" {
+		if !validVersions[c.TLS.MaxVersion] {
+			return fmt.Errorf("invalid TLS max_version: %s (must be 1.0, 1.1, 1.2, or 1.3)", c.TLS.MaxVersion)
+		}
+	}
+
+	validClientAuth := map[string]bool{
+		"none": true, "request": true, "require": true,
+		"verify": true, "require-and-verify": true,
+	}
+
+	if c.TLS.ClientAuth != "" {
+		if !validClientAuth[c.TLS.ClientAuth] {
+			return fmt.Errorf("invalid TLS client_auth: %s", c.TLS.ClientAuth)
 		}
 	}
 

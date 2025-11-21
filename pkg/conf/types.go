@@ -50,21 +50,6 @@ type HealthCheckConfig struct {
 	Path string `yaml:"path,omitempty"`
 }
 
-// TLSConfig represents TLS/SSL configuration
-type TLSConfig struct {
-	// Enabled enables TLS termination
-	Enabled bool `yaml:"enabled"`
-
-	// CertFile path to certificate file
-	CertFile string `yaml:"cert_file"`
-
-	// KeyFile path to private key file
-	KeyFile string `yaml:"key_file"`
-
-	// MinVersion minimum TLS version (e.g., "1.2", "1.3")
-	MinVersion string `yaml:"min_version"`
-}
-
 // LoadBalancerConfig represents load balancer settings
 type LoadBalancerConfig struct {
 	// Algorithm: "round-robin", "least-connections", "consistent-hash", "weighted-round-robin"
