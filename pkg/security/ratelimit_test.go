@@ -565,3 +565,564 @@ func BenchmarkTokenBucket_AllowParallel(b *testing.B) {
 		}
 	})
 }
+
+// ========== SlidingWindow Tests ==========
+
+func TestNewSlidingWindow(t *testing.T) {
+	ctx := context.Background()
+	limit := int64(100)
+	window := 1 * time.Second
+
+	sw := NewSlidingWindow(ctx, limit, window)
+	if sw == nil {
+		t.Fatal("NewSlidingWindow returned nil")
+	}
+
+	if sw.limit != limit {
+		t.Errorf("expected limit %d, got %d", limit, sw.limit)
+	}
+
+	if sw.window != window {
+		t.Errorf("expected window %v, got %v", window, sw.window)
+	}
+
+	if sw.windows == nil {
+		t.Error("windows map should be initialized")
+	}
+
+	if sw.cleanupInterval != 1*time.Minute {
+		t.Errorf("expected cleanupInterval 1m, got %v", sw.cleanupInterval)
+	}
+}
+
+func TestSlidingWindow_Allow_NewKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 10, 1*time.Second)
+	key := "test-key"
+
+	// First request should be allowed
+	if !sw.Allow(key) {
+		t.Error("first request should be allowed")
+	}
+
+	// Verify window was created
+	sw.mu.RLock()
+	_, exists := sw.windows[key]
+	sw.mu.RUnlock()
+
+	if !exists {
+		t.Error("window should exist after first Allow call")
+	}
+}
+
+func TestSlidingWindow_Allow_WithinLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(5)
+	sw := NewSlidingWindow(ctx, limit, 1*time.Second)
+	key := "test-key"
+
+	// Should allow exactly 'limit' requests
+	for i := 0; i < int(limit); i++ {
+		if !sw.Allow(key) {
+			t.Errorf("request %d should be allowed (limit: %d)", i+1, limit)
+		}
+	}
+
+	// Next request should be denied (within same time window)
+	if sw.Allow(key) {
+		t.Error("request beyond limit should be denied")
+	}
+}
+
+func TestSlidingWindow_Allow_WindowExpiry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(3)
+	window := 200 * time.Millisecond
+	sw := NewSlidingWindow(ctx, limit, window)
+	key := "test-key"
+
+	// Exhaust the limit
+	for i := 0; i < int(limit); i++ {
+		if !sw.Allow(key) {
+			t.Errorf("request %d should be allowed", i+1)
+		}
+	}
+
+	// Should be denied now
+	if sw.Allow(key) {
+		t.Error("should be denied after exhausting limit")
+	}
+
+	// Wait for window to expire
+	time.Sleep(window + 50*time.Millisecond)
+
+	// Should allow new requests after window expires
+	if !sw.Allow(key) {
+		t.Error("should allow request after window expires")
+	}
+}
+
+func TestSlidingWindow_Allow_SlidingBehavior(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(3)
+	window := 300 * time.Millisecond
+	sw := NewSlidingWindow(ctx, limit, window)
+	key := "test-key"
+
+	// Make 3 requests at t=0
+	for i := 0; i < 3; i++ {
+		if !sw.Allow(key) {
+			t.Errorf("request %d should be allowed", i+1)
+		}
+	}
+
+	// Wait 150ms (half the window)
+	time.Sleep(150 * time.Millisecond)
+
+	// Should still be denied (old requests still in window)
+	if sw.Allow(key) {
+		t.Error("should be denied, old requests still in window")
+	}
+
+	// Wait another 200ms (total 350ms, original requests expired)
+	time.Sleep(200 * time.Millisecond)
+
+	// Should allow new requests
+	for i := 0; i < 3; i++ {
+		if !sw.Allow(key) {
+			t.Errorf("request %d should be allowed after sliding", i+1)
+		}
+	}
+
+	// Should be denied again
+	if sw.Allow(key) {
+		t.Error("should be denied after exhausting limit again")
+	}
+}
+
+func TestSlidingWindow_Allow_MultipleKeys(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 3, 1*time.Second)
+
+	key1 := "key1"
+	key2 := "key2"
+
+	// Exhaust key1
+	for i := 0; i < 3; i++ {
+		sw.Allow(key1)
+	}
+
+	// key1 should be denied
+	if sw.Allow(key1) {
+		t.Error("key1 should be denied after exhaustion")
+	}
+
+	// key2 should still be allowed (separate window)
+	if !sw.Allow(key2) {
+		t.Error("key2 should be allowed (independent window)")
+	}
+}
+
+func TestSlidingWindow_Reset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 3, 1*time.Second)
+	key := "test-key"
+
+	// Exhaust the limit
+	for i := 0; i < 3; i++ {
+		sw.Allow(key)
+	}
+
+	// Should be denied
+	if sw.Allow(key) {
+		t.Error("should be denied after exhaustion")
+	}
+
+	// Reset the window
+	if !sw.Reset(key) {
+		t.Error("Reset should return true for existing key")
+	}
+
+	// Should be allowed again (new window)
+	if !sw.Allow(key) {
+		t.Error("should be allowed after reset")
+	}
+}
+
+func TestSlidingWindow_Reset_NonExistentKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 10, 1*time.Second)
+
+	// Reset non-existent key
+	if sw.Reset("non-existent") {
+		t.Error("Reset should return false for non-existent key")
+	}
+}
+
+func TestSlidingWindow_Cleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := &SlidingWindow{
+		limit:           10,
+		window:          200 * time.Millisecond,
+		windows:         make(map[string]*requestWindow),
+		cleanupInterval: 100 * time.Millisecond,
+	}
+	go sw.cleanup(ctx)
+
+	key1 := "key1"
+	key2 := "key2"
+
+	// Create windows
+	sw.Allow(key1)
+	sw.Allow(key2)
+
+	// Verify both exist
+	sw.mu.RLock()
+	count := len(sw.windows)
+	sw.mu.RUnlock()
+
+	if count != 2 {
+		t.Errorf("expected 2 windows, got %d", count)
+	}
+
+	// Wait for 2x window duration + cleanup interval
+	time.Sleep(500 * time.Millisecond)
+
+	// Windows should be cleaned up
+	sw.mu.RLock()
+	count = len(sw.windows)
+	sw.mu.RUnlock()
+
+	if count != 0 {
+		t.Errorf("expected 0 windows after cleanup, got %d", count)
+	}
+}
+
+func TestSlidingWindow_CleanupKeepsActive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := &SlidingWindow{
+		limit:           10,
+		window:          300 * time.Millisecond,
+		windows:         make(map[string]*requestWindow),
+		cleanupInterval: 100 * time.Millisecond,
+	}
+	go sw.cleanup(ctx)
+
+	key := "active-key"
+
+	// Create window
+	sw.Allow(key)
+
+	// Keep using it
+	for i := 0; i < 5; i++ {
+		time.Sleep(100 * time.Millisecond)
+		sw.Allow(key)
+	}
+
+	// Window should still exist (active)
+	sw.mu.RLock()
+	_, exists := sw.windows[key]
+	sw.mu.RUnlock()
+
+	if !exists {
+		t.Error("active window should not be cleaned up")
+	}
+}
+
+func TestSlidingWindow_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sw := &SlidingWindow{
+		limit:           10,
+		window:          1 * time.Second,
+		windows:         make(map[string]*requestWindow),
+		cleanupInterval: 50 * time.Millisecond,
+	}
+	go sw.cleanup(ctx)
+
+	// Cancel context
+	cancel()
+
+	// Wait a bit to ensure cleanup goroutine exits
+	time.Sleep(100 * time.Millisecond)
+
+	// Allow should still work even after context cancellation
+	if !sw.Allow("test-key") {
+		t.Error("Allow should work even after context cancellation")
+	}
+}
+
+func TestSlidingWindow_ConcurrentAccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(100)
+	sw := NewSlidingWindow(ctx, limit, 1*time.Second)
+	key := "concurrent-key"
+
+	var wg sync.WaitGroup
+	goroutines := 50
+	requestsPerGoroutine := 5
+
+	allowed := make([]int, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			count := 0
+			for j := 0; j < requestsPerGoroutine; j++ {
+				if sw.Allow(key) {
+					count++
+				}
+			}
+			allowed[idx] = count
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Count total allowed
+	total := 0
+	for _, count := range allowed {
+		total += count
+	}
+
+	// Should not exceed limit
+	if total > int(limit) {
+		t.Errorf("allowed more than limit: got %d, limit %d", total, limit)
+	}
+
+	// Should allow at least close to the limit
+	if total < int(limit)-10 {
+		t.Logf("warning: allowed significantly fewer than limit (%d < %d)", total, limit)
+	}
+}
+
+func TestSlidingWindow_ConcurrentReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 100, 1*time.Second)
+	key := "reset-key"
+
+	var wg sync.WaitGroup
+
+	// Concurrent Allow and Reset operations
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			sw.Allow(key)
+		}()
+
+		go func() {
+			defer wg.Done()
+			sw.Reset(key)
+		}()
+	}
+
+	wg.Wait()
+
+	// Should not panic and should still be functional
+	if !sw.Allow(key) {
+		t.Error("should be allowed after concurrent operations")
+	}
+}
+
+func TestSlidingWindow_ConcurrentMultipleKeys(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 50, 500*time.Millisecond)
+
+	var wg sync.WaitGroup
+	numKeys := 10
+	goroutinesPerKey := 10
+
+	for keyIdx := 0; keyIdx < numKeys; keyIdx++ {
+		for g := 0; g < goroutinesPerKey; g++ {
+			wg.Add(1)
+			go func(k int) {
+				defer wg.Done()
+				key := string(rune('A' + k))
+				for i := 0; i < 10; i++ {
+					sw.Allow(key)
+				}
+			}(keyIdx)
+		}
+	}
+
+	wg.Wait()
+
+	// Verify all keys exist
+	sw.mu.RLock()
+	count := len(sw.windows)
+	sw.mu.RUnlock()
+
+	if count != numKeys {
+		t.Errorf("expected %d windows, got %d", numKeys, count)
+	}
+}
+
+func TestSlidingWindow_PreciseTimingBehavior(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(2)
+	window := 200 * time.Millisecond
+	sw := NewSlidingWindow(ctx, limit, window)
+	key := "timing-test"
+
+	// Request at t=0
+	if !sw.Allow(key) {
+		t.Error("first request should be allowed")
+	}
+
+	// Request at t=100ms
+	time.Sleep(100 * time.Millisecond)
+	if !sw.Allow(key) {
+		t.Error("second request should be allowed")
+	}
+
+	// Request at t=150ms (both previous still in window)
+	time.Sleep(50 * time.Millisecond)
+	if sw.Allow(key) {
+		t.Error("third request should be denied (limit reached)")
+	}
+
+	// Wait until t=250ms (first request expired)
+	time.Sleep(100 * time.Millisecond)
+
+	// Should allow now (only second request in window)
+	if !sw.Allow(key) {
+		t.Error("should allow after first request expires")
+	}
+}
+
+func TestSlidingWindow_EmptyWindow(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 5, 100*time.Millisecond)
+	key := "test-key"
+
+	// Make requests
+	for i := 0; i < 5; i++ {
+		sw.Allow(key)
+	}
+
+	// Wait for window to completely expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Verify window is empty (all old requests removed)
+	sw.mu.RLock()
+	w := sw.windows[key]
+	sw.mu.RUnlock()
+
+	// After allowing one more, old requests should be cleaned
+	sw.Allow(key)
+
+	w.mu.RLock()
+	requestCountAfter := len(w.requests)
+	w.mu.RUnlock()
+
+	if requestCountAfter != 1 {
+		t.Errorf("expected 1 request after cleanup, got %d", requestCountAfter)
+	}
+}
+
+func TestSlidingWindow_ZeroLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 0, 1*time.Second)
+	key := "test-key"
+
+	// Should immediately deny with 0 limit
+	if sw.Allow(key) {
+		t.Error("should deny with 0 limit")
+	}
+}
+
+func TestSlidingWindow_HighFrequencyRequests(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	limit := int64(100)
+	window := 1 * time.Second
+	sw := NewSlidingWindow(ctx, limit, window)
+	key := "high-freq"
+
+	// Make many rapid requests
+	allowed := 0
+	for i := 0; i < 200; i++ {
+		if sw.Allow(key) {
+			allowed++
+		}
+	}
+
+	if allowed != int(limit) {
+		t.Errorf("expected exactly %d allowed, got %d", limit, allowed)
+	}
+}
+
+func BenchmarkSlidingWindow_Allow(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 1000000, 1*time.Hour)
+	key := "bench-key"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sw.Allow(key)
+	}
+}
+
+func BenchmarkSlidingWindow_AllowMultipleKeys(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 1000000, 1*time.Hour)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		key := string(rune(i % 100)) // 100 different keys
+		sw.Allow(key)
+	}
+}
+
+func BenchmarkSlidingWindow_AllowParallel(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sw := NewSlidingWindow(ctx, 1000000, 1*time.Hour)
+	key := "bench-key"
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			sw.Allow(key)
+		}
+	})
+}
