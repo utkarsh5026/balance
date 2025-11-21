@@ -13,13 +13,15 @@ import (
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
 	"github.com/utkarsh5026/balance/pkg/node"
+	"github.com/utkarsh5026/balance/pkg/transport"
 )
 
 type ProxyServer struct {
-	listener net.Listener
-	config   *conf.Config
-	pool     *node.Pool
-	balancer balance.LoadBalancer
+	listener   net.Listener
+	terminator *transport.Terminator
+	config     *conf.Config
+	pool       *node.Pool
+	balancer   balance.LoadBalancer
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -50,19 +52,57 @@ func NewTCPServer(cfg *conf.Config) (*ProxyServer, error) {
 }
 
 func (s *ProxyServer) Start() error {
-	ln, err := net.Listen("tcp", s.config.Listen)
-	if err != nil {
-		return fmt.Errorf("failed to start listener: %w", err)
+	if s.config.TLS != nil && s.config.TLS.Enabled {
+		if err := s.startTLS(); err != nil {
+			return err
+		}
+
+		slog.Info("TLS proxy server started",
+			"listen", s.config.Listen,
+			"mode", s.config.Mode,
+			"load_balancer", s.config.LoadBalancer.Algorithm,
+			"tls", "enabled")
+	} else {
+		if err := s.startRegularTCP(); err != nil {
+			return err
+		}
+
+		slog.Info("proxy server started",
+			"listen", s.config.Listen,
+			"mode", s.config.Mode,
+			"load_balancer", s.config.LoadBalancer.Algorithm)
 	}
 
-	s.listener = ln
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		s.startAccepting()
 	})
 
-	slog.Info("proxy server started", "listen", s.config.Listen, "mode", s.config.Mode, "load_balancer", s.config.LoadBalancer.Algorithm)
 	wg.Wait()
+	return nil
+}
+
+func (s *ProxyServer) startTLS() error {
+	terminator, err := createTerminator(s.config.TLS)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS terminator: %w", err)
+	}
+
+	if err := terminator.Listen(s.config.Listen); err != nil {
+		return fmt.Errorf("failed to start TLS listener: %w", err)
+	}
+
+	s.terminator = terminator
+	s.listener = terminator
+	return nil
+}
+
+func (s *ProxyServer) startRegularTCP() error {
+	ln, err := net.Listen("tcp", s.config.Listen)
+	if err != nil {
+		return fmt.Errorf("failed to start listener: %w", err)
+	}
+	s.listener = ln
 	return nil
 }
 
@@ -165,7 +205,11 @@ func (s *ProxyServer) Shutdown() error {
 	slog.Info("shutting down proxy server")
 	s.cancel()
 
-	if s.listener != nil {
+	if s.terminator != nil {
+		if err := s.terminator.Close(); err != nil {
+			slog.Error("Error closing TLS terminator", "error", err)
+		}
+	} else if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
 			slog.Error("Error closing listener", "error", err)
 		}
