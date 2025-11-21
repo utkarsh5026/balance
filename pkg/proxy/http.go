@@ -132,48 +132,47 @@ func (h *HttpProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	defer selectedBackend.DecrementActiveConnections()
 
 	targetURL := &url.URL{
-		Scheme:   "http",
+		Scheme:   getScheme(r),
 		Host:     selectedBackend.Address(),
 		Path:     r.URL.Path,
 		RawQuery: r.URL.RawQuery,
 	}
 
-	proxy := h.createReverseProxy(targetURL, selectedBackend)
-
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.Header.Set("X-Forwarded-For", clientIP)
-		req.Header.Set("X-Forwarded-Host", r.Host)
-		req.Header.Set("X-Forwarded-Proto", getScheme(r))
-		req.Header.Set("X-Real-IP", clientIP)
-	}
+	proxy := h.createReverseProxy(targetURL, selectedBackend, clientIP, r.Host)
 	proxy.ServeHTTP(w, r)
 }
 
-func (h *HttpProxyServer) createReverseProxy(target *url.URL, selectedBackend *node.Node) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = h.transport
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("Backend error for %s: %v", selectedBackend.Address(), err)
-		selectedBackend.MarkUnhealthy()
-		http.Error(w, "Backend error", http.StatusBadGateway)
+func (h *HttpProxyServer) createReverseProxy(target *url.URL, node *node.Node, clientIP, host string) *httputil.ReverseProxy {
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.Out.Header.Set("X-Forwarded-For", clientIP)
+			pr.Out.Header.Set("X-Forwarded-Host", host)
+			pr.Out.Header.Set("X-Forwarded-Proto", pr.In.URL.Scheme)
+			pr.Out.Header.Set("X-Real-IP", clientIP)
+		},
+		Transport: h.transport,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("Backend error for %s: %v", node.Address(), err)
+			node.MarkUnhealthy()
+			http.Error(w, "Backend error", http.StatusBadGateway)
+		},
 	}
 	return proxy
 }
 
 func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	selectedBackend := h.getNodeForRequest(w, r)
-	if selectedBackend == nil {
+	node := h.getNodeForRequest(w, r)
+	if node == nil {
 		return
 	}
 
-	selectedBackend.IncrementActiveConnections()
-	defer selectedBackend.DecrementActiveConnections()
+	node.IncrementActiveConnections()
+	defer node.DecrementActiveConnections()
 
-	backendConn, err := net.DialTimeout("tcp", selectedBackend.Address(), h.config.Timeouts.Connect)
+	backendConn, err := net.DialTimeout("tcp", node.Address(), h.config.Timeouts.Connect)
 	if err != nil {
-		selectedBackend.MarkUnhealthy()
+		node.MarkUnhealthy()
 		http.Error(w, "Failed to connect to backend", http.StatusBadGateway)
 		return
 	}
@@ -193,7 +192,6 @@ func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request
 	}
 	defer clientConn.Close()
 
-	// Flush any buffered data
 	if bufrw != nil {
 		if err := bufrw.Flush(); err != nil {
 			log.Printf("Failed to flush buffered data: %v", err)
@@ -205,7 +203,6 @@ func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Proxy WebSocket data bidirectionally
 	h.proxyWebSocket(clientConn, backendConn)
 }
 
