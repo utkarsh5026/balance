@@ -17,6 +17,21 @@ const (
 	VersionTLS13 TLSVersion = tls.VersionTLS13
 )
 
+func (v TLSVersion) String() string {
+	switch v {
+	case VersionTLS10:
+		return "TLS 1.0"
+	case VersionTLS11:
+		return "TLS 1.1"
+	case VersionTLS12:
+		return "TLS 1.2"
+	case VersionTLS13:
+		return "TLS 1.3"
+	default:
+		return fmt.Sprintf("Unknown (%d)", v)
+	}
+}
+
 var (
 	ErrUnsupportedTLSVersion = fmt.Errorf("unsupported TLS version")
 )
