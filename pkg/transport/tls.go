@@ -21,38 +21,61 @@ var (
 	ErrUnsupportedTLSVersion = fmt.Errorf("unsupported TLS version")
 )
 
-// Config represents TLS configuration
+// Config represents TLS configuration parameters.
 type Config struct {
-	// MinVersion is the minimum TLS version to accept
+	// MinVersion contains the minimum TLS version that is acceptable.
+	// If zero, TLS 1.0 is currently taken as the minimum.
 	MinVersion TLSVersion
 
-	// MaxVersion is the maximum TLS version to accept (0 means use latest)
+	// MaxVersion contains the maximum TLS version that is acceptable.
+	// If zero, the maximum version supported by the package is used,
+	// which is currently TLS 1.3.
 	MaxVersion TLSVersion
 
-	// CipherSuites is the list of enabled cipher suites (nil means use defaults)
+	// CipherSuites is a list of enabled cipher suites for TLS versions up to TLS 1.2.
+	// The order of the list is ignored unless PreferServerCipherSuites is true.
+	// If nil, a safe default list is used.
+	// Note that TLS 1.3 cipher suites are not configurable.
 	CipherSuites []uint16
 
-	// PreferServerCipherSuites controls whether server cipher suite preferences are used
+	// PreferServerCipherSuites controls whether the server selects the
+	// client's most preferred cipher suite, or the server's most preferred
+	// cipher suite. If true then the server's preference, as expressed in
+	// the order of elements in CipherSuites, is used.
 	PreferServerCipherSuites bool
 
-	// SessionTicketsDisabled disables session ticket (resumption) support
+	// SessionTicketsDisabled may be set to true to disable session ticket
+	// (resumption) support.
 	SessionTicketsDisabled bool
 
-	// SessionTicketKey is used to encrypt session tickets (optional)
+	// SessionTicketKey is used by TLS servers to provide session resumption.
+	// If zero, it will be filled with random data before the first server
+	// handshake.
+	//
+	// If multiple servers are terminating connections for the same host
+	// they should all have the same SessionTicketKey.
 	SessionTicketKey [32]byte
 
-	// ClientAuth determines the server's policy for client authentication
+	// ClientAuth determines the server's policy for
+	// TLS Client Authentication. The default is NoClientCert.
 	ClientAuth tls.ClientAuthType
 
-	// NextProtos is a list of supported application level protocols (ALPN)
+	// NextProtos is a list of supported application level protocols, in
+	// order of preference.
 	// Example: []string{"h2", "http/1.1"}
 	NextProtos []string
 
-	// InsecureSkipVerify controls whether to verify backend certificates
-	// Should only be true for testing
+	// InsecureSkipVerify controls whether a client verifies the server's
+	// certificate chain and host name.
+	// If InsecureSkipVerify is true, crypto/tls accepts any certificate
+	// presented by the server and any host name in that certificate.
+	// In this mode, TLS is susceptible to machine-in-the-middle attacks.
+	// This should be used only for testing.
 	InsecureSkipVerify bool
 
-	// Renegotiation controls what types of renegotiation are supported
+	// Renegotiation controls what types of renegotiation are supported.
+	// The default, never renegotiate, is correct for the vast majority of
+	// applications.
 	Renegotiation tls.RenegotiationSupport
 }
 
