@@ -6,13 +6,15 @@ import (
 )
 
 type Pool struct {
-	nodes []*Node
-	mu    sync.RWMutex
+	nodes   []*Node
+	nodeMap map[string]*Node
+	mu      sync.RWMutex
 }
 
 func NewPool() *Pool {
 	return &Pool{
-		nodes: make([]*Node, 0),
+		nodes:   make([]*Node, 0),
+		nodeMap: make(map[string]*Node),
 	}
 }
 
@@ -20,6 +22,7 @@ func (p *Pool) Add(node *Node) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.nodes = append(p.nodes, node)
+	p.nodeMap[node.Name()] = node
 }
 
 func (p *Pool) Remove(node *Node) bool {
@@ -28,6 +31,7 @@ func (p *Pool) Remove(node *Node) bool {
 	for i, n := range p.nodes {
 		if n == node {
 			p.nodes = append(p.nodes[:i], p.nodes[i+1:]...)
+			delete(p.nodeMap, node.Name())
 			return true
 		}
 	}
@@ -76,10 +80,5 @@ func (p *Pool) GetByName(name string) *Node {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	for _, n := range p.nodes {
-		if n.Name() == name {
-			return n
-		}
-	}
-	return nil
+	return p.nodeMap[name]
 }
