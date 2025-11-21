@@ -13,15 +13,17 @@ import (
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
 	"github.com/utkarsh5026/balance/pkg/node"
+	"github.com/utkarsh5026/balance/pkg/security"
 	"github.com/utkarsh5026/balance/pkg/transport"
 )
 
 type ProxyServer struct {
-	listener   net.Listener
-	terminator *transport.Terminator
-	config     *conf.Config
-	pool       *node.Pool
-	balancer   balance.LoadBalancer
+	listener        net.Listener
+	terminator      *transport.Terminator
+	config          *conf.Config
+	pool            *node.Pool
+	balancer        balance.LoadBalancer
+	securityManager *security.SecurityManager
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -42,12 +44,15 @@ func NewTCPServer(cfg *conf.Config) (*ProxyServer, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	securityManager := createSecurityManager(ctx, cfg)
+
 	return &ProxyServer{
-		config:   cfg,
-		pool:     pool,
-		balancer: balancer,
-		ctx:      ctx,
-		cancel:   cancel,
+		config:          cfg,
+		pool:            pool,
+		balancer:        balancer,
+		securityManager: securityManager,
+		ctx:             ctx,
+		cancel:          cancel,
 	}, nil
 }
 
@@ -141,6 +146,17 @@ func (s *ProxyServer) handleConnection(clientConn net.Conn) {
 	s.totalConnections.Add(1)
 	s.activeConnections.Add(1)
 	defer s.activeConnections.Add(-1)
+
+	if s.securityManager != nil {
+		clientIP := getConnIP(clientConn)
+		allowed, err := s.securityManager.AllowConn(clientIP)
+		if err != nil || !allowed {
+			slog.Warn("connection rejected by security manager",
+				"client_ip", clientIP,
+				"error", err)
+			return
+		}
+	}
 
 	node, err := s.balancer.Select()
 	if err != nil {

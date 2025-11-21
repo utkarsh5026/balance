@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
 	"github.com/utkarsh5026/balance/pkg/node"
+	"github.com/utkarsh5026/balance/pkg/security"
 )
 
 const (
@@ -76,6 +78,43 @@ func createNodePool(cfg *conf.Config) *node.Pool {
 	return pool
 }
 
+func createSecurityManager(ctx context.Context, cfg *conf.Config) *security.SecurityManager {
+	if cfg.Security == nil {
+		return nil
+	}
+
+	var rateLimiter security.RateLimiter
+	if cfg.Security.RateLimit != nil && cfg.Security.RateLimit.Enabled {
+		switch cfg.Security.RateLimit.Type {
+		case "token-bucket":
+			rateLimiter = security.NewTokenBucket(
+				ctx,
+				cfg.Security.RateLimit.RequestsPerSecond,
+				cfg.Security.RateLimit.BurstSize,
+			)
+		case "sliding-window":
+			windowSize, err := time.ParseDuration(cfg.Security.RateLimit.WindowSize)
+			if err != nil {
+				windowSize = 1 * time.Minute
+			}
+			rateLimiter = security.NewSlidingWindow(
+				ctx,
+				cfg.Security.RateLimit.MaxRequests,
+				windowSize,
+			)
+		}
+	}
+
+	ipBlocklist := security.NewIPBlocklist(ctx)
+	if cfg.Security.IPBlocklist != nil {
+		for _, ip := range cfg.Security.IPBlocklist.BlockedIPs {
+			ipBlocklist.BlockPermanent(ip)
+		}
+	}
+
+	return security.NewSecurityManager(rateLimiter, ipBlocklist)
+}
+
 func getClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		ips := strings.Split(xff, ",")
@@ -91,6 +130,14 @@ func getClientIP(r *http.Request) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
+	}
+	return ip
+}
+
+func getConnIP(conn net.Conn) string {
+	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		return conn.RemoteAddr().String()
 	}
 	return ip
 }

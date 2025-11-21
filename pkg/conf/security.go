@@ -25,4 +25,16 @@ type RateLimitConfig struct {
 type SecurityConfig struct {
 	// RateLimit configuration
 	RateLimit *RateLimitConfig `yaml:"rate_limit,omitempty"`
+
+	// IPBlocklist configuration
+	IPBlocklist *IPBlocklistConfig `yaml:"ip_blocklist,omitempty"`
+}
+
+// IPBlocklistConfig represents IP blocklist configuration
+type IPBlocklistConfig struct {
+	// BlockedIPs is a list of permanently blocked IPs
+	BlockedIPs []string `yaml:"blocked_ips,omitempty"`
+
+	// BlockedCIDRs is a list of blocked CIDR ranges
+	BlockedCIDRs []string `yaml:"blocked_cidrs,omitempty"`
 }

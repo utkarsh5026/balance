@@ -17,6 +17,7 @@ import (
 	"github.com/utkarsh5026/balance/pkg/conf"
 	"github.com/utkarsh5026/balance/pkg/node"
 	"github.com/utkarsh5026/balance/pkg/router"
+	"github.com/utkarsh5026/balance/pkg/security"
 	"github.com/utkarsh5026/balance/pkg/transport"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
@@ -27,13 +28,14 @@ const (
 )
 
 type HttpProxyServer struct {
-	config     *conf.Config
-	server     *http.Server
-	pool       *node.Pool
-	balancer   balance.LoadBalancer
-	router     *router.Router
-	transport  *http.Transport
-	terminator *transport.Terminator
+	config          *conf.Config
+	server          *http.Server
+	pool            *node.Pool
+	balancer        balance.LoadBalancer
+	router          *router.Router
+	transport       *http.Transport
+	terminator      *transport.Terminator
+	securityManager *security.SecurityManager
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -62,15 +64,18 @@ func NewHttpProxyServer(cfg *conf.Config) (*HttpProxyServer, error) {
 		rt = router.NewRouter(cfg.HTTP.Routes, pool)
 	}
 
+	securityManager := createSecurityManager(ctx, cfg)
+
 	httpServer := &HttpProxyServer{
-		config:     cfg,
-		pool:       pool,
-		balancer:   balancer,
-		router:     rt,
-		transport:  transport,
-		ctx:        ctx,
-		cancelFunc: cancel,
-		stats:      &Stats{},
+		config:          cfg,
+		pool:            pool,
+		balancer:        balancer,
+		router:          rt,
+		transport:       transport,
+		securityManager: securityManager,
+		ctx:             ctx,
+		cancelFunc:      cancel,
+		stats:           &Stats{},
 	}
 
 	mux := http.NewServeMux()
@@ -119,6 +124,19 @@ func (h *HttpProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	h.stats.OnRequestStart()
 	defer h.stats.OnRequestEnd()
 
+	if h.securityManager != nil {
+		clientIP := getClientIP(r)
+		allowed, err := h.securityManager.AllowConn(clientIP)
+		if err != nil || !allowed {
+			slog.Warn("request rejected by security manager",
+				"client_ip", clientIP,
+				"path", r.URL.Path,
+				"error", err)
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	if h.config.HTTP.EnableWebSocket && isWebSocketRequest(r) {
 		h.handleWebSocket(w, r)
 		return
@@ -162,6 +180,19 @@ func (h *HttpProxyServer) createReverseProxy(target *url.URL, node *node.Node, c
 }
 
 func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if h.securityManager != nil {
+		clientIP := getClientIP(r)
+		allowed, err := h.securityManager.AllowConn(clientIP)
+		if err != nil || !allowed {
+			slog.Warn("websocket request rejected by security manager",
+				"client_ip", clientIP,
+				"path", r.URL.Path,
+				"error", err)
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	node := h.getNodeForRequest(w, r)
 	if node == nil {
 		return
