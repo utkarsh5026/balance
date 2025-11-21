@@ -88,3 +88,41 @@ type Node struct {
 	// MaxConnections limits concurrent connections to this backend (0 = unlimited)
 	MaxConnections int `yaml:"max_connections"`
 }
+
+type Route struct {
+	// Name of the route
+	Name string `yaml:"name"`
+
+	// Host pattern for host-based routing (e.g., "api.example.com")
+	Host string `yaml:"host,omitempty"`
+
+	// PathPrefix for path-based routing (e.g., "/api/")
+	PathPrefix string `yaml:"path_prefix,omitempty"`
+
+	// Headers for header-based routing (e.g., {"X-API-Key": "secret"})
+	Headers map[string]string `yaml:"headers,omitempty"`
+
+	// Backends for this route (backend names)
+	Backends []string `yaml:"backends"`
+
+	// Priority for route matching (higher = higher priority)
+	Priority int `yaml:"priority"`
+}
+
+// HTTPConfig represents HTTP-specific configuration
+type HTTPConfig struct {
+	// Routes for HTTP routing (optional, if empty uses default backend pool)
+	Routes []Route `yaml:"routes,omitempty"`
+
+	// EnableWebSocket enables WebSocket proxying
+	EnableWebSocket bool `yaml:"enable_websocket"`
+
+	// EnableHTTP2 enables HTTP/2 support
+	EnableHTTP2 bool `yaml:"enable_http2"`
+
+	// MaxIdleConnsPerHost limits idle connections per backend
+	MaxIdleConnsPerHost int `yaml:"max_idle_conns_per_host"`
+
+	// IdleConnTimeout is the idle connection timeout
+	IdleConnTimeout time.Duration `yaml:"idle_conn_timeout"`
+}

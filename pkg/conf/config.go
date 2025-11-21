@@ -24,6 +24,9 @@ type Config struct {
 	// TLS configuration (optional)
 	TLS *TLSConfig `yaml:"tls,omitempty"`
 
+	// HTTP configuration (for HTTP mode)
+	HTTP *HTTPConfig `yaml:"http,omitempty"`
+
 	// Health check configuration (optional)
 	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty"`
 
