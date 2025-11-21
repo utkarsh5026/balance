@@ -21,11 +21,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	var server *proxy.ProxyServer
+	var server proxy.Server
 	slog.Info("Configuration loaded successfully from " + *configPath)
 	switch cfg.Mode {
 	case "tcp":
 		server, err = proxy.NewTCPServer(cfg)
+	case "http":
+		server, err = proxy.NewHttpProxyServer(cfg)
 	default:
 		slog.Error("Unsupported mode: " + cfg.Mode)
 		os.Exit(1)
@@ -46,7 +48,7 @@ func main() {
 }
 
 // waitForShutdown waits for interrupt signal and gracefully shuts down the server
-func waitForShutdown(server *proxy.ProxyServer) {
+func waitForShutdown(server proxy.Server) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
