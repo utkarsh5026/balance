@@ -9,7 +9,10 @@ import (
 )
 
 // Helper function to create a pool with test nodes
-func createHashTestPool(nodeConfigs []struct{ name, address string; weight int }) *node.Pool {
+func createHashTestPool(nodeConfigs []struct {
+	name, address string
+	weight        int
+}) *node.Pool {
 	pool := node.NewPool()
 	for _, config := range nodeConfigs {
 		n := node.NewNode(config.name, config.address, config.weight)
@@ -72,7 +75,10 @@ func TestConsistentHashBalancer_SelectNoNodes(t *testing.T) {
 
 // TestConsistentHashBalancer_SelectWithKey tests consistent selection with same key
 func TestConsistentHashBalancer_SelectWithKey(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -120,7 +126,10 @@ func TestConsistentHashBalancer_SelectWithKey(t *testing.T) {
 
 // TestConsistentHashBalancer_Select tests the default Select method
 func TestConsistentHashBalancer_Select(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -175,7 +184,10 @@ func TestConsistentHashBalancer_Select(t *testing.T) {
 
 // TestConsistentHashBalancer_WeightedDistribution tests weight handling
 func TestConsistentHashBalancer_WeightedDistribution(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1}, // Low weight
 		{"node2", "192.168.1.2:8080", 5}, // High weight
 		{"node3", "192.168.1.3:8080", 1}, // Low weight
@@ -211,7 +223,10 @@ func TestConsistentHashBalancer_WeightedDistribution(t *testing.T) {
 
 // TestConsistentHashBalancer_NodeAddition tests adding nodes to the pool
 func TestConsistentHashBalancer_NodeAddition(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 	})
@@ -318,7 +333,10 @@ func TestConsistentHashBalancer_AllNodesUnhealthy(t *testing.T) {
 
 // TestConsistentHashBalancer_VirtualNodeUniqueness tests that virtual nodes have unique hashes
 func TestConsistentHashBalancer_VirtualNodeUniqueness(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node11", "192.168.1.11:8080", 1}, // Similar address to test delimiter
 		{"server1", "server1:8080", 1},
@@ -353,7 +371,10 @@ func TestConsistentHashBalancer_VirtualNodeUniqueness(t *testing.T) {
 
 // TestConsistentHashBalancer_Concurrency tests thread safety
 func TestConsistentHashBalancer_Concurrency(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -398,7 +419,10 @@ func TestConsistentHashBalancer_Concurrency(t *testing.T) {
 
 // TestConsistentHashBalancer_ConcurrentPoolModification tests concurrent pool changes
 func TestConsistentHashBalancer_ConcurrentPoolModification(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 	})
@@ -454,7 +478,10 @@ func TestConsistentHashBalancer_ConcurrentPoolModification(t *testing.T) {
 
 // TestConsistentHashBalancer_RingDistribution tests that nodes are well distributed on the ring
 func TestConsistentHashBalancer_RingDistribution(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -497,7 +524,10 @@ func TestConsistentHashBalancer_RingDistribution(t *testing.T) {
 
 // TestConsistentHashBalancer_ZeroWeightNodes tests nodes with zero or negative weight
 func TestConsistentHashBalancer_ZeroWeightNodes(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 0},  // Zero weight
 		{"node2", "192.168.1.2:8080", -5}, // Negative weight
 		{"node3", "192.168.1.3:8080", 1},  // Normal weight
@@ -608,7 +638,10 @@ func TestBoundedConsistentHashBalancer_SelectNoNodes(t *testing.T) {
 
 // TestBoundedConsistentHashBalancer_SelectWithinLoadBounds tests selection when nodes are within bounds
 func TestBoundedConsistentHashBalancer_SelectWithinLoadBounds(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -745,7 +778,10 @@ func TestBoundedConsistentHashBalancer_FallbackToLeastLoaded(t *testing.T) {
 
 // TestBoundedConsistentHashBalancer_EdgeCaseZeroConnections tests edge case with zero connections
 func TestBoundedConsistentHashBalancer_EdgeCaseZeroConnections(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},
@@ -816,7 +852,10 @@ func TestBoundedConsistentHashBalancer_DynamicLoadChanges(t *testing.T) {
 
 // TestBoundedConsistentHashBalancer_Concurrency tests thread safety
 func TestBoundedConsistentHashBalancer_Concurrency(t *testing.T) {
-	pool := createHashTestPool([]struct{ name, address string; weight int }{
+	pool := createHashTestPool([]struct {
+		name, address string
+		weight        int
+	}{
 		{"node1", "192.168.1.1:8080", 1},
 		{"node2", "192.168.1.2:8080", 1},
 		{"node3", "192.168.1.3:8080", 1},

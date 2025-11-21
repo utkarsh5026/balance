@@ -133,10 +133,10 @@ func TestMatchPathPrefix(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		path          string
-		shouldMatch   bool
-		expectedPool  *node.Pool
+		name         string
+		path         string
+		shouldMatch  bool
+		expectedPool *node.Pool
 	}{
 		{
 			name:         "exact api prefix",
@@ -198,9 +198,9 @@ func TestMatchHost(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		host          string
-		expectedPool  *node.Pool
+		name         string
+		host         string
+		expectedPool *node.Pool
 	}{
 		{
 			name:         "exact host match",
@@ -253,9 +253,9 @@ func TestMatchWildcardHost(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		host          string
-		expectedPool  *node.Pool
+		name         string
+		host         string
+		expectedPool *node.Pool
 	}{
 		{
 			name:         "subdomain match",
@@ -320,9 +320,9 @@ func TestMatchHeaders(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		headers       map[string]string
-		expectedPool  *node.Pool
+		name         string
+		headers      map[string]string
+		expectedPool *node.Pool
 	}{
 		{
 			name: "matching header",
@@ -394,9 +394,9 @@ func TestMatchMultipleHeaders(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		headers       map[string]string
-		expectedPool  *node.Pool
+		name         string
+		headers      map[string]string
+		expectedPool *node.Pool
 	}{
 		{
 			name: "all headers match",
@@ -458,11 +458,11 @@ func TestMatchCombinedConditions(t *testing.T) {
 	router := NewRouter(routes, defaultPool)
 
 	tests := []struct {
-		name          string
-		host          string
-		path          string
-		headers       map[string]string
-		expectedPool  *node.Pool
+		name         string
+		host         string
+		path         string
+		headers      map[string]string
+		expectedPool *node.Pool
 	}{
 		{
 			name: "all conditions match",
@@ -492,10 +492,10 @@ func TestMatchCombinedConditions(t *testing.T) {
 			expectedPool: defaultPool,
 		},
 		{
-			name:    "wrong header",
-			host:    "api.example.com",
-			path:    "/v1/users",
-			headers: map[string]string{},
+			name:         "wrong header",
+			host:         "api.example.com",
+			path:         "/v1/users",
+			headers:      map[string]string{},
 			expectedPool: defaultPool,
 		},
 	}
