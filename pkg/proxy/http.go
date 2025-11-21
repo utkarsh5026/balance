@@ -132,24 +132,22 @@ func (h *HttpProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 	defer selectedBackend.DecrementActiveConnections()
 
 	targetURL := &url.URL{
-		Scheme:   getScheme(r),
-		Host:     selectedBackend.Address(),
-		Path:     r.URL.Path,
-		RawQuery: r.URL.RawQuery,
+		Scheme: getScheme(r),
+		Host:   selectedBackend.Address(),
 	}
 
-	proxy := h.createReverseProxy(targetURL, selectedBackend, clientIP, r.Host)
+	proxy := h.createReverseProxy(targetURL, selectedBackend, clientIP)
 	proxy.ServeHTTP(w, r)
 }
 
-func (h *HttpProxyServer) createReverseProxy(target *url.URL, node *node.Node, clientIP, host string) *httputil.ReverseProxy {
+func (h *HttpProxyServer) createReverseProxy(target *url.URL, node *node.Node, clientIP string) *httputil.ReverseProxy {
+	scheme := target.Scheme
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
-			pr.Out.Header.Set("X-Forwarded-For", clientIP)
-			pr.Out.Header.Set("X-Forwarded-Host", host)
-			pr.Out.Header.Set("X-Forwarded-Proto", pr.In.URL.Scheme)
+			pr.SetXForwarded()
 			pr.Out.Header.Set("X-Real-IP", clientIP)
+			pr.Out.Header.Set("X-Forwarded-Proto", scheme)
 		},
 		Transport: h.transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
