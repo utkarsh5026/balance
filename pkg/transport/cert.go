@@ -79,6 +79,30 @@ func (c *CertificateManager) LoadCertificate(certFile, keyFile string) (*Certifi
 	return cert, nil
 }
 
+func (cm *CertificateManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	serverName := hello.ServerName
+	if serverName == "" {
+
+		if cm.defaultCert != nil {
+			return &cm.defaultCert.TLSCert, nil
+		}
+		return nil, fmt.Errorf("no default certificate configured")
+	}
+
+	if cert, ok := cm.certificates[serverName]; ok {
+		return &cert.TLSCert, nil
+	}
+
+	if cm.defaultCert != nil {
+		return &cm.defaultCert.TLSCert, nil
+	}
+
+	return nil, fmt.Errorf("no certificate found for %s", serverName)
+}
+
 func (c *CertificateManager) AddCertificateFromFiles(certFile, keyFile string, setDefault bool) error {
 	cert, err := c.LoadCertificate(certFile, keyFile)
 	if err != nil {
