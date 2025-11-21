@@ -52,25 +52,17 @@ func NewTCPServer(cfg *conf.Config) (*ProxyServer, error) {
 }
 
 func (s *ProxyServer) Start() error {
-	if s.config.TLS != nil && s.config.TLS.Enabled {
-		if err := s.startTLS(); err != nil {
-			return err
-		}
+	var err error
 
-		slog.Info("TLS proxy server started",
-			"listen", s.config.Listen,
-			"mode", s.config.Mode,
-			"load_balancer", s.config.LoadBalancer.Algorithm,
-			"tls", "enabled")
-	} else {
-		if err := s.startRegularTCP(); err != nil {
-			return err
-		}
+	switch {
+	case s.config.TLS != nil && s.config.TLS.Enabled:
+		err = s.startTLS()
+	default:
+		err = s.startRegularTCP()
+	}
 
-		slog.Info("proxy server started",
-			"listen", s.config.Listen,
-			"mode", s.config.Mode,
-			"load_balancer", s.config.LoadBalancer.Algorithm)
+	if err != nil {
+		return err
 	}
 
 	var wg sync.WaitGroup
@@ -94,6 +86,13 @@ func (s *ProxyServer) startTLS() error {
 
 	s.terminator = terminator
 	s.listener = terminator
+
+	slog.Info("TLS proxy server started",
+		"listen", s.config.Listen,
+		"mode", s.config.Mode,
+		"load_balancer", s.config.LoadBalancer.Algorithm,
+		"tls", "enabled")
+
 	return nil
 }
 
@@ -103,6 +102,11 @@ func (s *ProxyServer) startRegularTCP() error {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}
 	s.listener = ln
+
+	slog.Info("proxy server started",
+		"listen", s.config.Listen,
+		"mode", s.config.Mode,
+		"load_balancer", s.config.LoadBalancer.Algorithm)
 	return nil
 }
 

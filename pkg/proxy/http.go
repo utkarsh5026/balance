@@ -17,6 +17,7 @@ import (
 	"github.com/utkarsh5026/balance/pkg/conf"
 	"github.com/utkarsh5026/balance/pkg/node"
 	"github.com/utkarsh5026/balance/pkg/router"
+	"github.com/utkarsh5026/balance/pkg/transport"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,12 +27,13 @@ const (
 )
 
 type HttpProxyServer struct {
-	config    *conf.Config
-	server    *http.Server
-	pool      *node.Pool
-	balancer  balance.LoadBalancer
-	router    *router.Router
-	transport *http.Transport
+	config     *conf.Config
+	server     *http.Server
+	pool       *node.Pool
+	balancer   balance.LoadBalancer
+	router     *router.Router
+	transport  *http.Transport
+	terminator *transport.Terminator
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -256,7 +258,6 @@ func (h *HttpProxyServer) proxyWebSocket(clientConn, backendConn net.Conn) {
 		if err != nil && err != io.EOF {
 			log.Printf("Error copying WebSocket client -> backend: %v", err)
 		}
-		// Close the write side of backend connection to signal EOF
 		if tcpConn, ok := backendConn.(*net.TCPConn); ok {
 			if err := tcpConn.CloseWrite(); err != nil {
 				log.Printf("Error closing write side of backend connection: %v", err)
@@ -271,7 +272,6 @@ func (h *HttpProxyServer) proxyWebSocket(clientConn, backendConn net.Conn) {
 		if err != nil && err != io.EOF {
 			log.Printf("Error copying WebSocket backend -> client: %v", err)
 		}
-		// Close the write side of client connection to signal EOF
 		if tcpConn, ok := clientConn.(*net.TCPConn); ok {
 			if err := tcpConn.CloseWrite(); err != nil {
 				log.Printf("Error closing write side of client connection: %v", err)
@@ -285,12 +285,55 @@ func (h *HttpProxyServer) proxyWebSocket(clientConn, backendConn net.Conn) {
 func (h *HttpProxyServer) Start() error {
 	var g errgroup.Group
 	g.Go(func() error {
-		if err := h.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			return err
+		var err error
+
+		switch {
+		case h.config.TLS != nil && h.config.TLS.Enabled:
+			err = h.startTLS()
+		default:
+			err = h.startRegularHTTP()
 		}
-		return nil
+
+		return err
 	})
 	return g.Wait()
+}
+
+func (h *HttpProxyServer) startTLS() error {
+	terminator, err := createTerminator(h.config.TLS)
+	if err != nil {
+		return err
+	}
+
+	if err := terminator.Listen(h.config.Listen); err != nil {
+		return err
+	}
+
+	h.terminator = terminator
+
+	slog.Info("HTTPS proxy server started",
+		"listen", h.config.Listen,
+		"mode", h.config.Mode,
+		"tls", "enabled",
+		"http2", h.config.HTTP.EnableHTTP2)
+
+	if err := h.server.Serve(terminator); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+
+	return nil
+}
+
+func (h *HttpProxyServer) startRegularHTTP() error {
+	slog.Info("HTTP proxy server started",
+		"listen", h.config.Listen,
+		"mode", h.config.Mode,
+		"http2", h.config.HTTP.EnableHTTP2)
+
+	if err := h.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 func (h *HttpProxyServer) Shutdown() error {
@@ -303,6 +346,12 @@ func (h *HttpProxyServer) Shutdown() error {
 
 	if err := h.server.Shutdown(ctx); err != nil {
 		slog.Error("Error during HTTP server shutdown", "error", err)
+	}
+
+	if h.terminator != nil {
+		if err := h.terminator.Close(); err != nil {
+			slog.Error("Error closing TLS terminator", "error", err)
+		}
 	}
 
 	h.transport.CloseIdleConnections()
