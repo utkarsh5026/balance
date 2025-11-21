@@ -3,9 +3,11 @@ package conf
 import (
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"go.yaml.in/yaml/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 type Config struct {
@@ -89,22 +91,25 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid load balancer algorithm: %s", c.LoadBalancer.Algorithm)
 	}
 
-	if err := c.validateTLS(); err != nil {
-		return err
-	}
+	var g errgroup.Group
 
-	return nil
+	g.Go(c.validateTLS)
+	g.Go(c.validateSecurity)
+
+	return g.Wait()
 }
 
 func (c *Config) validateTLS() error {
-	if c.TLS != nil && c.TLS.Enabled {
-		if len(c.TLS.Certificates) == 0 && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
-			return fmt.Errorf("TLS certificates or cert_file/key_file is required when TLS is enabled")
-		}
+	if c.TLS == nil || !c.TLS.Enabled {
+		return nil
+	}
 
-		if c.TLS.KeyFile == "" {
-			return fmt.Errorf("TLS key_file is required when TLS is enabled")
-		}
+	if len(c.TLS.Certificates) == 0 && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
+		return fmt.Errorf("TLS certificates or cert_file/key_file is required when TLS is enabled")
+	}
+
+	if c.TLS.KeyFile == "" {
+		return fmt.Errorf("TLS key_file is required when TLS is enabled")
 	}
 
 	validVersions := map[string]bool{"1.0": true, "1.1": true, "1.2": true, "1.3": true}
@@ -132,6 +137,20 @@ func (c *Config) validateTLS() error {
 		}
 	}
 
+	return nil
+}
+
+func (c *Config) validateSecurity() error {
+	if c.Security == nil {
+		return nil
+	}
+
+	validBuckets := []string{"token-bucket", "sliding-window"}
+	if c.Security.RateLimit != nil && c.Security.RateLimit.Enabled {
+		if !slices.Contains(validBuckets, c.Security.RateLimit.Type) {
+			return fmt.Errorf("invalid rate limit type: %s (must be 'token-bucket' or 'sliding-window')", c.Security.RateLimit.Type)
+		}
+	}
 	return nil
 }
 
