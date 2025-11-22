@@ -69,11 +69,13 @@ type HealthMetrics struct {
 // StateChangeListener is called when backend state changes
 type StateChangeListener func(backend *node.Node, old, new NodeState)
 
+// nodeWithHealth wraps a Node with health tracking capabilities.
+// It maintains the health state and metrics for a single backend node.
 type nodeWithHealth struct {
 	Node  *node.Node
 	State atomic.Value // NodeState
 
-	Metrics *HealthMetrics
+	m *HealthMetrics
 
 	// Thresholds for state transitions
 	HealthyThreshold   int
@@ -83,55 +85,62 @@ type nodeWithHealth struct {
 	listeners []StateChangeListener
 }
 
+// NewNodeWithHealth creates a new health tracking wrapper for a node.
+// It initializes the health state to healthy and sets up metrics tracking.
 func NewNodeWithHealth(n *node.Node, healthyThreshold, unhealthyThreshold int) *nodeWithHealth {
 	nh := &nodeWithHealth{
 		Node:               n,
 		HealthyThreshold:   healthyThreshold,
 		UnhealthyThreshold: unhealthyThreshold,
 		listeners:          make([]StateChangeListener, 0),
-		Metrics:            &HealthMetrics{},
+		m:                  &HealthMetrics{},
 	}
 	nh.State.Store(StateHealthy)
 	now := time.Now()
-	nh.Metrics.lastCheckTime.Store(now)
-	nh.Metrics.lastStateChange.Store(now)
+	nh.m.lastCheckTime.Store(now)
+	nh.m.lastStateChange.Store(now)
 	return nh
 }
 
+// RecordSuccess records a successful health check.
+// It updates metrics and may transition the node state to healthy if the threshold is met.
 func (h *nodeWithHealth) RecordSuccess() {
 
-	h.Metrics.consecutiveSuccesses.Add(1)
-	h.Metrics.consecutiveFailures.Store(0)
-	h.Metrics.totalSuccesses.Add(1)
-	h.Metrics.lastCheckTime.Store(time.Now())
+	h.m.consecutiveSuccesses.Add(1)
+	h.m.consecutiveFailures.Store(0)
+	h.m.totalSuccesses.Add(1)
+	h.m.lastCheckTime.Store(time.Now())
 
-	// Check if we should transition to healthy
-	if h.Metrics.consecutiveSuccesses.Load() >= int64(h.HealthyThreshold) {
+	if h.m.consecutiveSuccesses.Load() >= int64(h.HealthyThreshold) {
 		h.transitionTo(StateHealthy)
 	}
 }
 
+// RecordFailure records a failed health check.
+// It updates metrics and may transition the node state to unhealthy if the threshold is met.
 func (h *nodeWithHealth) RecordFailure() {
-	h.Metrics.consecutiveFailures.Add(1)
-	h.Metrics.consecutiveSuccesses.Store(0)
-	h.Metrics.totalFailures.Add(1)
-	h.Metrics.lastCheckTime.Store(time.Now())
+	h.m.consecutiveFailures.Add(1)
+	h.m.consecutiveSuccesses.Store(0)
+	h.m.totalFailures.Add(1)
+	h.m.lastCheckTime.Store(time.Now())
 
-	if h.Metrics.consecutiveFailures.Load() >= int64(h.UnhealthyThreshold) {
+	if h.m.consecutiveFailures.Load() >= int64(h.UnhealthyThreshold) {
 		h.transitionTo(StateUnhealthy)
 	}
 }
 
+// RecordRequest records metrics for a request handled by this node.
+// It tracks total requests, response time, and failures for passive health checking.
 func (h *nodeWithHealth) RecordRequest(success bool, responseTime time.Duration) {
-	h.Metrics.totalRequests.Add(1)
-	h.Metrics.totalResponseTime.Add(responseTime.Nanoseconds())
-	if success {
-		h.Metrics.totalResponseTime.Add(responseTime.Nanoseconds())
-	} else {
-		h.Metrics.failedRequests.Add(1)
+	h.m.totalRequests.Add(1)
+	h.m.totalResponseTime.Add(responseTime.Nanoseconds())
+	if !success {
+		h.m.failedRequests.Add(1)
 	}
 }
 
+// transitionTo changes the node's health state and notifies listeners if the state changes.
+// It updates the node's health status accordingly.
 func (h *nodeWithHealth) transitionTo(newState NodeState) {
 	oldState := h.State.Load().(NodeState)
 	if oldState == newState {
@@ -139,7 +148,7 @@ func (h *nodeWithHealth) transitionTo(newState NodeState) {
 	}
 
 	h.State.Store(newState)
-	h.Metrics.lastStateChange.Store(time.Now())
+	h.m.lastStateChange.Store(time.Now())
 
 	if newState == StateHealthy {
 		h.Node.MarkHealthy()
@@ -156,6 +165,7 @@ func (h *nodeWithHealth) transitionTo(newState NodeState) {
 	}
 }
 
+// AddListener adds a callback function that will be invoked when the node's state changes.
 func (h *nodeWithHealth) AddListener(listener StateChangeListener) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
