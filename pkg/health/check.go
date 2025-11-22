@@ -210,7 +210,10 @@ func (c *Checker) performHealthChecks(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
-	results := c.activeChecker.CheckMultiple(ctx, nodes)
+	results, err := c.activeChecker.CheckMultiple(ctx, nodes)
+	if err != nil {
+		c.logger.Error("Error during active health checks", "error", err)
+	}
 
 	for _, res := range results {
 		c.process(res)

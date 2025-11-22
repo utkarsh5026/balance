@@ -271,7 +271,10 @@ func TestActiveCheckerCheckMultiple(t *testing.T) {
 	}
 	checker := NewActiveHealthChecker(config)
 
-	results := checker.CheckMultiple(context.Background(), nodes)
+	results, err := checker.CheckMultiple(context.Background(), nodes)
+	if err != nil {
+		t.Fatalf("CheckMultiple() error = %v", err)
+	}
 
 	if len(results) != 3 {
 		t.Fatalf("len(results) = %d, want %d", len(results), 3)
@@ -318,7 +321,10 @@ func TestActiveCheckerCheckMultipleWithCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	results := checker.CheckMultiple(ctx, nodes)
+	results, err := checker.CheckMultiple(ctx, nodes)
+	if err != nil {
+		t.Fatalf("CheckMultiple() error = %v", err)
+	}
 
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want %d", len(results), 2)

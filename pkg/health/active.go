@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/utkarsh5026/balance/pkg/node"
+	"github.com/utkarsh5026/poolme/pool"
 )
 
 type NetworkType string
@@ -166,18 +167,14 @@ func (ac *activeChecker) checkHTTP(ctx context.Context, url string) (int, error)
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set User-Agent to identify health check requests
 	req.Header.Set("User-Agent", "balance-health-checker/1.0")
-
 	resp, err := ac.client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Drain and discard body to allow connection reuse
 	_, _ = io.Copy(io.Discard, resp.Body)
-
 	if slices.Contains(ac.expectedStatusCodes, resp.StatusCode) {
 		return resp.StatusCode, nil
 	}
@@ -185,50 +182,21 @@ func (ac *activeChecker) checkHTTP(ctx context.Context, url string) (int, error)
 	return resp.StatusCode, fmt.Errorf("unexpected status code: %d (expected: %v)", resp.StatusCode, ac.expectedStatusCodes)
 }
 
-func (ac *activeChecker) CheckMultiple(ctx context.Context, backends []*node.Node) []activeCheckResult {
-	results := make([]activeCheckResult, len(backends))
-	resultChan := make(chan struct {
-		index  int
-		result activeCheckResult
-	}, len(backends))
+func (ac *activeChecker) CheckMultiple(ctx context.Context, backends []*node.Node) ([]activeCheckResult, error) {
+	p := pool.NewWorkerPool[*node.Node, activeCheckResult]()
 
-	for i, b := range backends {
-		go func(index int, backend *node.Node) {
-			select {
-			case <-ctx.Done():
-				resultChan <- struct {
-					index  int
-					result activeCheckResult
-				}{
-					index: index,
-					result: activeCheckResult{
-						Backend:   backend,
-						Success:   false,
-						Error:     ctx.Err(),
-						Duration:  0,
-						Timestamp: time.Now(),
-					},
-				}
-			default:
-				result := ac.Check(ctx, backend)
-				resultChan <- struct {
-					index  int
-					result activeCheckResult
-				}{index, result}
-			}
-		}(i, b)
+	results, err := p.Process(ctx, backends, func(ctx context.Context, backend *node.Node) (activeCheckResult, error) {
+		result := ac.Check(ctx, backend)
+		return result, nil
+	})
+
+	// Context cancellation is expected behavior in health checking
+	// Return the partial results without treating it as an error
+	if err != nil && ctx.Err() == nil {
+		return results, fmt.Errorf("pool processing error: %w", err)
 	}
 
-	for range backends {
-		select {
-		case res := <-resultChan:
-			results[res.index] = res.result
-		case <-ctx.Done():
-			return results
-		}
-	}
-
-	return results
+	return results, nil
 }
 
 // Close cleans up resources used by the health checker

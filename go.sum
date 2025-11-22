@@ -1,3 +1,7 @@
+github.com/utkarsh5026/poolme v1.0.0 h1:TZDPLQx+LMr2ijkKhDf5BiwOK1cNR8fpAq+1zUku/No=
+github.com/utkarsh5026/poolme v1.0.0/go.mod h1:6vZBcGY7N+VVO5GOcIqKWRvjAU79LM0korM2RgY4F14=
+github.com/utkarsh5026/poolme v1.1.0 h1:RqxUJh2hqeYdO0Db73Y229c6qOurTWaqso3I/xI/nHY=
+github.com/utkarsh5026/poolme v1.1.0/go.mod h1:d6yd7r6++RdmosAYI3roSgq+KmtTf7ESclDRjUuJWaQ=
 go.yaml.in/yaml/v2 v2.4.3 h1:6gvOSjQoTB3vt1l+CU+tSyi/HOjfOjRLJ4YwYZGwRO0=
 go.yaml.in/yaml/v2 v2.4.3/go.mod h1:zSxWcmIDjOzPXpjlTTbAsKokqkDNAVtZO0WOMiT90s8=
 golang.org/x/net v0.47.0 h1:Mx+4dIFzqraBXUugkia1OOvlD6LemFo1ALMHjrXDOhY=
