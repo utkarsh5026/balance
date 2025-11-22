@@ -8,8 +8,12 @@ import (
 	"github.com/utkarsh5026/balance/pkg/node"
 )
 
-// PassiveCheckerConfig configures a passive health checker
-type PassiveCheckerConfig struct {
+const (
+	defaultBuckets = 16
+)
+
+// passiveCheckerConfig configures a passive health checker
+type passiveCheckerConfig struct {
 	// ErrorRateThreshold is the error rate (0.0-1.0) that triggers unhealthy
 	ErrorRateThreshold float64
 
@@ -23,27 +27,33 @@ type PassiveCheckerConfig struct {
 	Window time.Duration
 }
 
-// PassiveChecker monitors backend failures and marks them unhealthy
-type PassiveChecker struct {
-	config PassiveCheckerConfig
+// passiveChecker monitors backend failures and marks them unhealthy
+type passiveChecker struct {
+	config passiveCheckerConfig
 
 	// Track failures per backend
 	failures map[*node.Node]*failureTracker
 	mu       sync.RWMutex
 }
 
+type timeBucket struct {
+	totalReq, failedReq int64
+}
+
 // failureTracker tracks failures for a single backend
 type failureTracker struct {
 	consecutiveFailures atomic.Int64
-	lastFailureTime     time.Time
-	windowFailures      []time.Time
+	buckets             []timeBucket
+	bucketIdx           int // Current bucket index
+	bucketDuration      time.Duration
+	lastAccess          time.Time
 	mu                  sync.Mutex
 }
 
 // NewPassiveChecker creates a new passive health checker
-func NewPassiveChecker(config PassiveCheckerConfig) *PassiveChecker {
+func NewPassiveChecker(config passiveCheckerConfig) *passiveChecker {
 	if config.ErrorRateThreshold == 0 {
-		config.ErrorRateThreshold = 0.5 // 50% error rate
+		config.ErrorRateThreshold = 0.5
 	}
 	if config.MinRequests == 0 {
 		config.MinRequests = 10
@@ -55,57 +65,100 @@ func NewPassiveChecker(config PassiveCheckerConfig) *PassiveChecker {
 		config.Window = 1 * time.Minute
 	}
 
-	return &PassiveChecker{
+	return &passiveChecker{
 		config:   config,
 		failures: make(map[*node.Node]*failureTracker),
 	}
 }
 
-func (pc *PassiveChecker) RecordSuccess(n *node.Node, responseTime time.Duration) {
-	tracker := pc.getTracker(n)
-	tracker.consecutiveFailures.Store(0)
-}
+func (pc *passiveChecker) RecordSuccess(n *node.Node, responseTime time.Duration) {
+	t := pc.getTracker(n)
 
-func (pc *PassiveChecker) RecordFailure(n *node.Node, err error) bool {
-	tracker := pc.getTracker(n)
-	tracker.mu.Lock()
-	defer tracker.mu.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	now := time.Now()
-	tracker.consecutiveFailures.Add(1)
-	tracker.lastFailureTime = now
+	pc.cleanupOld(t, now)
 
-	tracker.windowFailures = append(tracker.windowFailures, now)
-
-	timeStartFrom := now.Add(-pc.config.Window)
-	failures := make([]time.Time, 0, len(tracker.windowFailures))
-
-	for _, t := range tracker.windowFailures {
-		if t.After(timeStartFrom) {
-			failures = append(failures, t)
-		}
-	}
-
-	tracker.windowFailures = failures
-	return pc.shouldMarkUnhealthy(tracker)
+	t.consecutiveFailures.Store(0)
+	t.buckets[t.bucketIdx].totalReq++
 }
 
-func (pc *PassiveChecker) getTracker(n *node.Node) *failureTracker {
+func (pc *passiveChecker) RecordFailure(n *node.Node, err error) (nodeHealthy bool) {
+	t := pc.getTracker(n)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := time.Now()
+	pc.cleanupOld(t, now)
+
+	t.consecutiveFailures.Add(1)
+	t.buckets[t.bucketIdx].totalReq++
+	t.buckets[t.bucketIdx].failedReq++
+
+	return pc.shouldMarkUnhealthy(t)
+}
+
+func (pc *passiveChecker) getTracker(n *node.Node) *failureTracker {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	tracker, exists := pc.failures[n]
 	if !exists {
 		tracker = &failureTracker{
-			windowFailures: make([]time.Time, 0),
+			buckets:        make([]timeBucket, defaultBuckets),
+			bucketDuration: pc.config.Window / time.Duration(defaultBuckets),
+			lastAccess:     time.Now(),
 		}
 		pc.failures[n] = tracker
 	}
 	return tracker
 }
 
-func (pc *PassiveChecker) shouldMarkUnhealthy(tracker *failureTracker) bool {
+func (pc *passiveChecker) cleanupOld(t *failureTracker, now time.Time) {
+	elapsed := now.Sub(t.lastAccess)
+	if elapsed < t.bucketDuration {
+		return
+	}
+
+	skipCount := int(elapsed / t.bucketDuration)
+	if skipCount >= len(t.buckets) {
+		for i := range t.buckets {
+			t.buckets[i] = timeBucket{}
+		}
+		t.lastAccess = now
+		return
+	}
+
+	for range skipCount {
+		t.bucketIdx = (t.bucketIdx + 1) % len(t.buckets)
+		t.buckets[t.bucketIdx] = timeBucket{}
+	}
+	t.lastAccess = now
+}
+
+func (pc *passiveChecker) shouldMarkUnhealthy(tracker *failureTracker) bool {
 	if tracker.consecutiveFailures.Load() >= int64(pc.config.ConsecutiveFailures) {
 		return true
 	}
+
+	var totalReq, failedReq int64
+	for _, bucket := range tracker.buckets {
+		totalReq += bucket.totalReq
+		failedReq += bucket.failedReq
+	}
+
+	if totalReq >= pc.config.MinRequests {
+		errorRate := float64(failedReq) / float64(totalReq)
+		if errorRate >= pc.config.ErrorRateThreshold {
+			return true
+		}
+	}
+
 	return false
+}
+
+func (pc *passiveChecker) Reset(n *node.Node) {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	delete(pc.failures, n)
 }
