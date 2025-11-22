@@ -20,8 +20,8 @@ const (
 	CheckTypeHTTPS NetworkType = "https"
 )
 
-// ActiveCheckerConfig configures an active health checker
-type ActiveCheckerConfig struct {
+// activeCheckConfig configures an active health checker
+type activeCheckConfig struct {
 	// NetworkType specifies the type of health check
 	NetworkType NetworkType
 
@@ -44,7 +44,7 @@ type ActiveCheckerConfig struct {
 	EnableKeepAlive bool
 }
 
-type ActiveCheckResult struct {
+type activeCheckResult struct {
 	Backend *node.Node
 	// Success indicates if the check passed
 	Success bool
@@ -62,7 +62,7 @@ type ActiveCheckResult struct {
 	StatusCode int
 }
 
-type ActiveHealthChecker struct {
+type activeChecker struct {
 	networkType NetworkType
 
 	timeout time.Duration
@@ -76,7 +76,7 @@ type ActiveHealthChecker struct {
 	client *http.Client
 }
 
-func NewActiveHealthChecker(config ActiveCheckerConfig) *ActiveHealthChecker {
+func NewActiveHealthChecker(config activeCheckConfig) *activeChecker {
 	if config.NetworkType == "" {
 		config.NetworkType = CheckTypeTCP
 	}
@@ -108,7 +108,7 @@ func NewActiveHealthChecker(config ActiveCheckerConfig) *ActiveHealthChecker {
 		},
 	}
 
-	return &ActiveHealthChecker{
+	return &activeChecker{
 		networkType:         config.NetworkType,
 		timeout:             config.Timeout,
 		httpPath:            config.HTTPPath,
@@ -118,9 +118,9 @@ func NewActiveHealthChecker(config ActiveCheckerConfig) *ActiveHealthChecker {
 	}
 }
 
-func (ac *ActiveHealthChecker) Check(ctx context.Context, n *node.Node) ActiveCheckResult {
+func (ac *activeChecker) Check(ctx context.Context, n *node.Node) activeCheckResult {
 	start := time.Now()
-	result := ActiveCheckResult{
+	result := activeCheckResult{
 		Backend:   n,
 		Timestamp: start,
 	}
@@ -145,7 +145,7 @@ func (ac *ActiveHealthChecker) Check(ctx context.Context, n *node.Node) ActiveCh
 }
 
 // checkTCP performs a TCP connection check
-func (ac *ActiveHealthChecker) checkTCP(ctx context.Context, address string) error {
+func (ac *activeChecker) checkTCP(ctx context.Context, address string) error {
 	dialer := &net.Dialer{
 		Timeout: ac.timeout,
 	}
@@ -160,7 +160,7 @@ func (ac *ActiveHealthChecker) checkTCP(ctx context.Context, address string) err
 	return nil
 }
 
-func (ac *ActiveHealthChecker) checkHTTP(ctx context.Context, url string) (int, error) {
+func (ac *activeChecker) checkHTTP(ctx context.Context, url string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, ac.httpMethod, url, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %w", err)
@@ -185,11 +185,11 @@ func (ac *ActiveHealthChecker) checkHTTP(ctx context.Context, url string) (int, 
 	return resp.StatusCode, fmt.Errorf("unexpected status code: %d (expected: %v)", resp.StatusCode, ac.expectedStatusCodes)
 }
 
-func (ac *ActiveHealthChecker) CheckMultiple(ctx context.Context, backends []*node.Node) []ActiveCheckResult {
-	results := make([]ActiveCheckResult, len(backends))
+func (ac *activeChecker) CheckMultiple(ctx context.Context, backends []*node.Node) []activeCheckResult {
+	results := make([]activeCheckResult, len(backends))
 	resultChan := make(chan struct {
 		index  int
-		result ActiveCheckResult
+		result activeCheckResult
 	}, len(backends))
 
 	for i, b := range backends {
@@ -198,10 +198,10 @@ func (ac *ActiveHealthChecker) CheckMultiple(ctx context.Context, backends []*no
 			case <-ctx.Done():
 				resultChan <- struct {
 					index  int
-					result ActiveCheckResult
+					result activeCheckResult
 				}{
 					index: index,
-					result: ActiveCheckResult{
+					result: activeCheckResult{
 						Backend:   backend,
 						Success:   false,
 						Error:     ctx.Err(),
@@ -213,7 +213,7 @@ func (ac *ActiveHealthChecker) CheckMultiple(ctx context.Context, backends []*no
 				result := ac.Check(ctx, backend)
 				resultChan <- struct {
 					index  int
-					result ActiveCheckResult
+					result activeCheckResult
 				}{index, result}
 			}
 		}(i, b)
@@ -232,7 +232,7 @@ func (ac *ActiveHealthChecker) CheckMultiple(ctx context.Context, backends []*no
 }
 
 // Close cleans up resources used by the health checker
-func (ac *ActiveHealthChecker) Close() {
+func (ac *activeChecker) Close() {
 	if ac.client != nil {
 		ac.client.CloseIdleConnections()
 	}
