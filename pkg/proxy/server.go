@@ -12,6 +12,7 @@ import (
 
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
+	"github.com/utkarsh5026/balance/pkg/health"
 	"github.com/utkarsh5026/balance/pkg/node"
 	"github.com/utkarsh5026/balance/pkg/security"
 	"github.com/utkarsh5026/balance/pkg/transport"
@@ -24,6 +25,7 @@ type ProxyServer struct {
 	pool            *node.Pool
 	balancer        balance.LoadBalancer
 	securityManager *security.SecurityManager
+	healthChecker   *health.Checker
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -46,11 +48,21 @@ func NewTCPServer(cfg *conf.Config) (*ProxyServer, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	securityManager := createSecurityManager(ctx, cfg)
 
+	var healthChecker *health.Checker
+	if cfg.HealthCheck != nil && cfg.HealthCheck.Enabled {
+		healthChecker, err = createHealthChecker(cfg, pool)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create health checker: %w", err)
+		}
+	}
+
 	return &ProxyServer{
 		config:          cfg,
 		pool:            pool,
 		balancer:        balancer,
 		securityManager: securityManager,
+		healthChecker:   healthChecker,
 		ctx:             ctx,
 		cancel:          cancel,
 	}, nil
@@ -68,6 +80,12 @@ func (s *ProxyServer) Start() error {
 
 	if err != nil {
 		return err
+	}
+
+	// Start health checker
+	if s.healthChecker != nil {
+		s.healthChecker.Start(s.ctx)
+		slog.Info("health checker started")
 	}
 
 	var wg sync.WaitGroup
@@ -139,6 +157,7 @@ func (s *ProxyServer) startAccepting() {
 }
 
 func (s *ProxyServer) handleConnection(clientConn net.Conn) {
+	startTime := time.Now()
 	s.conns.Store(clientConn, struct{}{})
 	defer s.conns.Delete(clientConn)
 	defer clientConn.Close()
@@ -171,6 +190,9 @@ func (s *ProxyServer) handleConnection(clientConn net.Conn) {
 	backendConn, err := dialer.DialContext(s.ctx, "tcp", node.Address())
 	if err != nil {
 		slog.Error("failed to connect to backend node", "node", node.Address(), "error", err)
+		if s.healthChecker != nil {
+			s.healthChecker.RecordRequest(node, false, time.Since(startTime))
+		}
 		return
 	}
 
@@ -189,6 +211,10 @@ func (s *ProxyServer) handleConnection(clientConn net.Conn) {
 	}
 
 	s.proxyData(clientConn, backendConn)
+
+	if s.healthChecker != nil {
+		s.healthChecker.RecordRequest(node, true, time.Since(startTime))
+	}
 }
 
 func (s *ProxyServer) proxyData(client, backend net.Conn) {
@@ -241,6 +267,12 @@ func (s *ProxyServer) Shutdown() error {
 		}
 		return true
 	})
+
+	if s.healthChecker != nil {
+		if err := s.healthChecker.Close(); err != nil {
+			slog.Error("Error closing health checker", "error", err)
+		}
+	}
 
 	slog.Info("Final statistics:")
 	slog.Info("  Total connections", "count", s.totalConnections.Load())

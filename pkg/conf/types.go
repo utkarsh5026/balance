@@ -46,8 +46,23 @@ type HealthCheckConfig struct {
 	// HealthyThreshold number of successes before marking healthy
 	HealthyThreshold int `yaml:"healthy_threshold"`
 
+	// Type of health check: "tcp", "http", or "https" (auto-detected if not specified)
+	Type string `yaml:"type,omitempty"`
+
 	// Path for HTTP health checks (e.g., "/health")
 	Path string `yaml:"path,omitempty"`
+
+	// EnablePassiveChecks enables passive health monitoring based on real traffic
+	EnablePassiveChecks bool `yaml:"enable_passive_checks"`
+
+	// ErrorRateThreshold is the error rate (0.0-1.0) that triggers unhealthy state
+	ErrorRateThreshold float64 `yaml:"error_rate_threshold"`
+
+	// ConsecutiveFailures is the number of consecutive failures before marking unhealthy
+	ConsecutiveFailures int `yaml:"consecutive_failures"`
+
+	// PassiveCheckWindow is the time window for passive health check tracking
+	PassiveCheckWindow time.Duration `yaml:"passive_check_window"`
 }
 
 // LoadBalancerConfig represents load balancer settings

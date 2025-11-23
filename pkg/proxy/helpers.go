@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
+	"github.com/utkarsh5026/balance/pkg/health"
 	"github.com/utkarsh5026/balance/pkg/node"
 	"github.com/utkarsh5026/balance/pkg/security"
 )
@@ -150,6 +152,73 @@ func getScheme(r *http.Request) string {
 		return scheme
 	}
 	return "http"
+}
+
+func createHealthChecker(cfg *conf.Config, pool *node.Pool) (*health.Checker, error) {
+	// Determine check type based on config
+	checkType := determineCheckType(cfg)
+
+	// Set defaults for passive checks if not configured
+	errorRateThreshold := cfg.HealthCheck.ErrorRateThreshold
+	if errorRateThreshold == 0 {
+		errorRateThreshold = 0.5 // 50% default
+	}
+
+	consecutiveFailures := cfg.HealthCheck.ConsecutiveFailures
+	if consecutiveFailures == 0 {
+		consecutiveFailures = 3 // default
+	}
+
+	passiveWindow := cfg.HealthCheck.PassiveCheckWindow
+	if passiveWindow == 0 {
+		passiveWindow = 1 * time.Minute // default
+	}
+
+	checkerConfig := health.CheckerConfig{
+		Interval:           cfg.HealthCheck.Interval,
+		Timeout:            cfg.HealthCheck.Timeout,
+		HealthyThreshold:   cfg.HealthCheck.HealthyThreshold,
+		UnhealthyThreshold: cfg.HealthCheck.UnhealthyThreshold,
+
+		// Active checks
+		ActiveCheckType: checkType,
+		HTTPPath:        cfg.HealthCheck.Path,
+
+		// Passive checks
+		EnablePassiveChecks: cfg.HealthCheck.EnablePassiveChecks,
+		ErrorRateThreshold:  errorRateThreshold,
+		ConsecutiveFailures: consecutiveFailures,
+		PassiveCheckWindow:  passiveWindow,
+
+		Logger: slog.Default(),
+	}
+
+	return health.NewChecker(pool, checkerConfig)
+}
+
+func determineCheckType(cfg *conf.Config) health.NetworkType {
+	// If explicitly configured, use that
+	if cfg.HealthCheck.Type != "" {
+		switch cfg.HealthCheck.Type {
+		case "tcp":
+			return health.CheckTypeTCP
+		case "http":
+			return health.CheckTypeHTTP
+		case "https":
+			return health.CheckTypeHTTPS
+		}
+	}
+
+	// Auto-detect based on mode and TLS settings
+	switch cfg.Mode {
+	case "http":
+		if cfg.TLS != nil && cfg.TLS.Enabled {
+			return health.CheckTypeHTTPS
+		}
+		return health.CheckTypeHTTP
+	default:
+		return health.CheckTypeTCP
+	}
 }
 
 type Stats struct {

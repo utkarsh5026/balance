@@ -15,6 +15,7 @@ import (
 
 	"github.com/utkarsh5026/balance/pkg/balance"
 	"github.com/utkarsh5026/balance/pkg/conf"
+	"github.com/utkarsh5026/balance/pkg/health"
 	"github.com/utkarsh5026/balance/pkg/node"
 	"github.com/utkarsh5026/balance/pkg/router"
 	"github.com/utkarsh5026/balance/pkg/security"
@@ -36,6 +37,7 @@ type HttpProxyServer struct {
 	transport       *http.Transport
 	terminator      *transport.Terminator
 	securityManager *security.SecurityManager
+	healthChecker   *health.Checker
 
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -66,6 +68,16 @@ func NewHttpProxyServer(cfg *conf.Config) (*HttpProxyServer, error) {
 
 	securityManager := createSecurityManager(ctx, cfg)
 
+	// Initialize health checker if enabled
+	var healthChecker *health.Checker
+	if cfg.HealthCheck != nil && cfg.HealthCheck.Enabled {
+		healthChecker, err = createHealthChecker(cfg, pool)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+	}
+
 	httpServer := &HttpProxyServer{
 		config:          cfg,
 		pool:            pool,
@@ -73,6 +85,7 @@ func NewHttpProxyServer(cfg *conf.Config) (*HttpProxyServer, error) {
 		router:          rt,
 		transport:       transport,
 		securityManager: securityManager,
+		healthChecker:   healthChecker,
 		ctx:             ctx,
 		cancelFunc:      cancel,
 		stats:           &Stats{},
@@ -121,6 +134,7 @@ func createTransport(cfg *conf.Config) *http.Transport {
 }
 
 func (h *HttpProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	h.stats.OnRequestStart()
 	defer h.stats.OnRequestEnd()
 
@@ -156,6 +170,10 @@ func (h *HttpProxyServer) handleRequest(w http.ResponseWriter, r *http.Request) 
 		Host:   selectedBackend.Address(),
 	}
 
+	ctx := context.WithValue(r.Context(), "startTime", startTime)
+	ctx = context.WithValue(ctx, "selectedNode", selectedBackend)
+	r = r.WithContext(ctx)
+
 	proxy := h.createReverseProxy(targetURL, selectedBackend, clientIP)
 	proxy.ServeHTTP(w, r)
 }
@@ -172,14 +190,40 @@ func (h *HttpProxyServer) createReverseProxy(target *url.URL, node *node.Node, c
 		Transport: h.transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("Backend error for %s: %v", node.Address(), err)
-			node.MarkUnhealthy()
+
+			// Record failure in health checker
+			if h.healthChecker != nil {
+				if startTime, ok := r.Context().Value("startTime").(time.Time); ok {
+					h.healthChecker.RecordRequest(node, false, time.Since(startTime))
+				} else {
+					h.healthChecker.RecordRequest(node, false, 0)
+				}
+			} else {
+				// Fallback to old behavior if no health checker
+				node.MarkUnhealthy()
+			}
+
 			http.Error(w, "Backend error", http.StatusBadGateway)
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			// Record success or failure based on status code
+			if h.healthChecker != nil {
+				if startTime, ok := resp.Request.Context().Value("startTime").(time.Time); ok {
+					responseTime := time.Since(startTime)
+					// 5xx errors are backend failures
+					success := resp.StatusCode < 500
+					h.healthChecker.RecordRequest(node, success, responseTime)
+				}
+			}
+			return nil
 		},
 	}
 	return proxy
 }
 
 func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
 	if h.securityManager != nil {
 		clientIP := getClientIP(r)
 		allowed, err := h.securityManager.AllowConn(clientIP)
@@ -203,7 +247,11 @@ func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request
 
 	backendConn, err := net.DialTimeout("tcp", node.Address(), h.config.Timeouts.Connect)
 	if err != nil {
-		node.MarkUnhealthy()
+		if h.healthChecker != nil {
+			h.healthChecker.RecordRequest(node, false, time.Since(startTime))
+		} else {
+			node.MarkUnhealthy()
+		}
 		http.Error(w, "Failed to connect to backend", http.StatusBadGateway)
 		return
 	}
@@ -231,7 +279,16 @@ func (h *HttpProxyServer) handleWebSocket(w http.ResponseWriter, r *http.Request
 
 	if err := r.Write(backendConn); err != nil {
 		log.Printf("Failed to write upgrade request: %v", err)
+		// Record failure
+		if h.healthChecker != nil {
+			h.healthChecker.RecordRequest(node, false, time.Since(startTime))
+		}
 		return
+	}
+
+	// Record successful WebSocket upgrade
+	if h.healthChecker != nil {
+		h.healthChecker.RecordRequest(node, true, time.Since(startTime))
 	}
 
 	h.proxyWebSocket(clientConn, backendConn)
@@ -314,6 +371,12 @@ func (h *HttpProxyServer) proxyWebSocket(clientConn, backendConn net.Conn) {
 }
 
 func (h *HttpProxyServer) Start() error {
+	// Start health checker
+	if h.healthChecker != nil {
+		h.healthChecker.Start(h.ctx)
+		slog.Info("health checker started")
+	}
+
 	var g errgroup.Group
 	g.Go(func() error {
 		var err error
@@ -371,6 +434,13 @@ func (h *HttpProxyServer) Shutdown() error {
 	slog.Info("shutting down the server")
 
 	h.cancelFunc()
+
+	// Close health checker
+	if h.healthChecker != nil {
+		if err := h.healthChecker.Close(); err != nil {
+			slog.Error("Error closing health checker", "error", err)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
